@@ -1,19 +1,20 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
 
-class Atom():
+class Atom(object):
     def __init__(self, predicate, terms):
         '''
         :param predicate: string, the predicate
         :param terms: tuple of size 1 or 2
         '''
+        object.__init__(self)
         self.predicate = predicate
         self.terms = terms
 
     def __hash__(self):
-        hashed_list = self.terms[:].append(self.predicate)
-        return hash(hashed_list)
-
+        hashed_list = self.terms[:]
+        hashed_list.append(self.predicate)
+        return hash(tuple(hashed_list))
 
     def __eq__(self, other):
         """Overrides the default implementation"""
@@ -24,6 +25,14 @@ class Atom():
     def __ne__(self, other):
         """Overrides the default implementation (unnecessary in Python 3)"""
         return not self.__eq__(other)
+
+    def __str__(self):
+        terms_str = ""
+        for term in self.terms:
+            terms_str += str(term)
+            terms_str += ","
+        terms_str = terms_str[:-1]
+        return self.predicate+"("+terms_str+")"
 
 
 class Clause():

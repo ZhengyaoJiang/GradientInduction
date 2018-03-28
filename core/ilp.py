@@ -1,11 +1,6 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
 
-class KnowledgeBase():
-    def __init__(self, constants=["a","b"]):
-        self.__constant = constants
-        self.__extension = []
-
 class ILP():
     '''
     a Inductive logic programming problem
@@ -27,7 +22,7 @@ class LanguageFrame():
     def __init__(self, target, extension, constants):
         '''
         :param target: string, target predicate
-        :param extension: list of atoms, extensional predicates
+        :param extension: list of strings, extensional predicates
         :param constants: list of strings, constants
         '''
         self.target = target

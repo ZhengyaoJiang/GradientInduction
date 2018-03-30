@@ -5,11 +5,16 @@ class Atom(object):
     def __init__(self, predicate, terms):
         '''
         :param predicate: string, the predicate
-        :param terms: tuple of size 1 or 2
+        :param terms: tuple of string (or integer) of size 1 or 2.
+        use integer 0, 1, 2 as variables
         '''
         object.__init__(self)
         self.predicate = predicate
         self.terms = terms
+
+    @property
+    def arity(self):
+        return len(self.terms)
 
     def __hash__(self):
         hashed_list = self.terms[:]
@@ -39,7 +44,7 @@ class Clause():
     def __init__(self, head, body):
         '''
         :param head: atom, result of a clause
-        :param body: list of atoms, conditions, amximum length is 2
+        :param body: list of atoms, conditions, amximum length is 2.
         '''
         self.head = head
         self.body = body

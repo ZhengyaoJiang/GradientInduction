@@ -22,13 +22,12 @@ class LanguageFrame():
     def __init__(self, target, extension, constants):
         '''
         :param target: string, target predicate
-        :param extension: list of strings, extensional predicates
+        :param extension: list of (string, integer), extensional predicates and their arity
         :param constants: list of strings, constants
         '''
         self.target = target
-        self.__extension = extension
+        self.extension = extension
         self.__constants = constants
-
 
 class RuleTemplate():
     def __init__(self, variables_n, allow_intensional):
@@ -44,12 +43,13 @@ class RuleTemplate():
 class ProgramTemplate():
     def __init__(self, auxiliary, rules, forward_n):
         '''
-        :param auxiliary: list of strings, set of auxiliary intensional predicates
+        :param auxiliary: list of (string, integer), set of auxiliary intensional predicates and their arity
         :param rules: dictionary of strings to tuples of rule templates,
         map from each intensional predicate to a pair of rule templates
         :param forward_n: integer4, max number of steps of forward chaining
         '''
-        self.__auxiliary = auxiliary
-        self.__rules = rules
-        self.__forward_n = forward_n
+        self.auxiliary = auxiliary
+        self.rules = rules
+        self.forward_n = forward_n
+
 

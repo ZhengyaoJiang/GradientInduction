@@ -9,21 +9,31 @@ class RulesManager():
         self.__language = language_frame
         self.__template = program_template
 
-    def generate_clauses(self, target, rule_template):
-        base_variable = tuple(range(target.arity))
-        base_variables = [base_variable for _ in target.arity]
-        head = self.generate_predicates((target.predicate,), *base_variables)
+    def generate_clauses(self, intensional, rule_template):
+        base_variable = tuple(range(intensional.arity))
+        head = (Atom(intensional,base_variable),)
 
-        term1 = self.generate_predicates(self.__template.auxiliary+self.__language.extension, )
-
+        body_variable = tuple(range(intensional.arity+rule_template.variables_n))
+        if rule_template.allow_intensional:
+            predicates = list(set(self.__template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
+        else:
+            predicates = [self.__language.extensional]
+        terms = []
+        print(predicates)
+        for predicate in predicates:
+            print(predicate)
+            body_variables = [body_variable for _ in range(predicate.arity)]
+            terms += self.generate_term_atoms(predicate, *body_variables)
+        result_tuples = product(head, terms, terms)
+        return [Clause(result[0], result[1:]) for result in result_tuples]
 
     @staticmethod
-    def generate_predicates(predicate_candidate, *variables):
+    def generate_term_atoms(predicate, *variables):
         '''
-        :param predict_candidate: string, candiates of predicate
-        :param variables: iterable of integer, candidates of variables
+        :param predict_candidate: string, candiate of predicate
+        :param variables: iterable of tuples of integers, candidates of variables at each position
         :return: tuple of atoms
         '''
-        result_tuples = product((predicate_candidate,), *variables)
+        result_tuples = product((predicate,), *variables)
         atoms = [Atom(result[0], result[1:]) for result in result_tuples]
         return atoms

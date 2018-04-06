@@ -19,14 +19,14 @@ class ILP():
         self.__negative = negative
 
 class LanguageFrame():
-    def __init__(self, target, extension, constants):
+    def __init__(self, target, extensional, constants):
         '''
         :param target: string, target predicate
-        :param extension: list of (string, integer), extensional predicates and their arity
+        :param extensional: list of Predicates, extensional predicates and their arity
         :param constants: list of strings, constants
         '''
         self.target = target
-        self.extension = extension
+        self.extensional = extensional
         self.__constants = constants
 
 class RuleTemplate():
@@ -43,7 +43,7 @@ class RuleTemplate():
 class ProgramTemplate():
     def __init__(self, auxiliary, rules, forward_n):
         '''
-        :param auxiliary: list of (string, integer), set of auxiliary intensional predicates and their arity
+        :param auxiliary: list of Predicates, set of auxiliary intensional predicates and their arity
         :param rules: dictionary of strings to tuples of rule templates,
         map from each intensional predicate to a pair of rule templates
         :param forward_n: integer4, max number of steps of forward chaining

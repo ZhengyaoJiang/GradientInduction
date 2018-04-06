@@ -1,16 +1,20 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
+from collections import namedtuple
+
+Predicate = namedtuple("Predicate", "name arity")
 
 class Atom(object):
     def __init__(self, predicate, terms):
         '''
-        :param predicate: string, the predicate
+        :param predicate: Predicate, the predicate of the atom
         :param terms: tuple of string (or integer) of size 1 or 2.
         use integer 0, 1, 2 as variables
         '''
         object.__init__(self)
         self.predicate = predicate
         self.terms = terms
+        assert len(terms)==predicate.arity
 
     @property
     def arity(self):
@@ -37,7 +41,7 @@ class Atom(object):
             terms_str += str(term)
             terms_str += ","
         terms_str = terms_str[:-1]
-        return self.predicate+"("+terms_str+")"
+        return self.predicate.name+"("+terms_str+")"
 
 
 class Clause():
@@ -49,3 +53,10 @@ class Clause():
         self.head = head
         self.body = body
 
+    def __str__(self):
+        body_str = ""
+        for term in self.body:
+            body_str += str(term)
+            body_str += ","
+        body_str = body_str[:-1]
+        return str(self.head)+":-"+body_str

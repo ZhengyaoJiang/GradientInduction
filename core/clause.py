@@ -13,7 +13,7 @@ class Atom(object):
         '''
         object.__init__(self)
         self.predicate = predicate
-        self.terms = terms
+        self.terms = tuple(terms)
         assert len(terms)==predicate.arity
 
     @property
@@ -21,7 +21,7 @@ class Atom(object):
         return len(self.terms)
 
     def __hash__(self):
-        hashed_list = self.terms[:]
+        hashed_list = list(self.terms[:])
         hashed_list.append(self.predicate)
         return hash(tuple(hashed_list))
 
@@ -43,6 +43,46 @@ class Atom(object):
         terms_str = terms_str[:-1]
         return self.predicate.name+"("+terms_str+")"
 
+    @property
+    def variables(self):
+        var = []
+        for term in self.terms:
+            if isinstance(term, int):
+                var.append(term)
+        return set(var)
+
+    def match_variable(self, target):
+        '''
+        :param target: ground atom to be matched
+        :return: dictionary from int to string, indicating the map from variable to constant. return empty dictionary if
+        the two cannot match.
+        '''
+        assert self.predicate == target.predicate
+        match = {}
+        for i in range(self.arity):
+            if isinstance(self.terms[i], str):
+                if self.terms[i] == target.terms[i]:
+                    continue
+                else:
+                    return {}
+            else:
+                match[self.terms[i]] = target.terms[i]
+        return match
+
+    def replace_variable(self, match):
+        '''
+        :param match: match dictionary
+        :return: a atoms whose variable is replaced by constants, given the match mapping.
+        '''
+        terms = []
+        for i,variable in enumerate(self.terms):
+            if variable not in match:
+                terms.append(variable)
+            else:
+                terms.append(match[variable])
+        result = Atom(self.predicate, terms)
+        return result
+
 
 class Clause():
     def __init__(self, head, body):
@@ -60,3 +100,15 @@ class Clause():
             body_str += ","
         body_str = body_str[:-1]
         return str(self.head)+":-"+body_str
+
+    def replace_by_head(self, head):
+        '''
+        :param head: a ground atom
+        :return: replaced clause
+        '''
+        match = self.head.match_variable(head)
+        new_body = []
+        for atom in self.body:
+            new_body.append(atom.replace_variable(match))
+        return Clause(head, new_body)
+

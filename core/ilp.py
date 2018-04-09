@@ -27,7 +27,7 @@ class LanguageFrame():
         '''
         self.target = target
         self.extensional = extensional
-        self.__constants = constants
+        self.constants = constants
 
 class RuleTemplate():
     def __init__(self, variables_n, allow_intensional):
@@ -41,15 +41,15 @@ class RuleTemplate():
         self.allow_intensional = allow_intensional
 
 class ProgramTemplate():
-    def __init__(self, auxiliary, rules, forward_n):
+    def __init__(self, auxiliary, rule_temps, forward_n):
         '''
         :param auxiliary: list of Predicates, set of auxiliary intensional predicates and their arity
-        :param rules: dictionary of strings to tuples of rule templates,
+        :param rule_temps: dictionary of strings to tuples of rule templates,
         map from each intensional predicate to a pair of rule templates
         :param forward_n: integer4, max number of steps of forward chaining
         '''
         self.auxiliary = auxiliary
-        self.rules = rules
+        self.rule_temps = rule_temps
         self.forward_n = forward_n
 
 

@@ -28,6 +28,20 @@ class Agent(object):
     def inference_step(self):
         pass
 
+    def inference_single_clause(self, valuation, X):
+        '''
+        The F_c in the paper
+        :param valuation:
+        :param X:
+        :return:
+        '''
+        X1 = X[:, :, 0]
+        X2 = X[:, :, 1]
+        Y1 = tf.gather_nd(valuation, X1)
+        Y2 = tf.gather_nd(valuation, X2)
+        Z = Y1*Y2
+        return tf.reduce_max(Z, axis=1)
+
     def loss(self):
         loss = tf.nn.sigmoid_cross_entropy_with_logits(self.deduction(), self.labels)
 

@@ -4,6 +4,7 @@ from itertools import product
 from core.ilp import *
 from core.clause import *
 from collections import defaultdict
+from itertools import izip_longest
 
 class RulesManager():
     def __init__(self, language_frame, program_template):
@@ -13,6 +14,27 @@ class RulesManager():
         self.__predicate_mapping = {} # map from predicate to ground atom indices
         self.all_grounds = []
         self.__generate_grounds()
+        self.all_clauses = defaultdict(list) # dictionary of predicate to list(2d) of lists.
+        self.__init_all_clauses()
+        self.induction_matrices =defaultdict(list)
+        self.__init_induction_matrices()
+
+    def __init_all_clauses(self):
+        intensionals = [self.__language.target] + self.__template.auxiliary
+        for intensional in intensionals:
+            self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                       self.__template.rule_temps[intensional][0]))
+            self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                       self.__template.rule_temps[intensional][1]))
+
+    def __init_induction_matrices(self):
+        for intensional, clauses in self.all_clauses.items():
+            for row in clauses:
+                row_matrices = []
+                for clause in row:
+                    row_matrices.append(self.generate_induction_matrix(clause))
+                self.induction_matrices[intensional].append(row_matrices)
+
 
     def generate_clauses(self, intensional, rule_template):
         base_variable = tuple(range(intensional.arity))
@@ -44,7 +66,26 @@ class RulesManager():
                 return index
         raise ValueError("didn't find {} in all ground atoms".format(atom))
 
+    def generate_induction_matrix(self, clause):
+        '''
+        :param cluase:
+        :return: array of size (number_of_ground_atoms, max_satisfy_paris, 2)
+        '''
+        #TODO: genrate matrix n
+        satisfy = []
+        for atom in self.all_grounds:
+            satisfy.append(self.find_satisfy_by_head(clause, atom))
+        X = np.empty(find_shape(satisfy))
+        fill_array(X, satisfy)
+        return X
+
     def find_satisfy_by_head(self, clause, head):
+        '''
+        find combination of ground atoms that can trigger the clause to get a specific conclusion (head atom)
+        :param clause:
+        :param head:
+        :return:
+        '''
         result = [] #list of paris of indexes
         free_body = clause.replace_by_head(head).body
         free_variables = list(free_body[0].variables.union(free_body[1].variables))
@@ -104,6 +145,29 @@ class RulesManager():
         result_tuples = product((predicate,), *variables)
         atoms = [Atom(result[0], result[1:]) for result in result_tuples]
         return atoms
+
+# from https://stackoverflow.com/questions/27890052
+def find_shape(seq):
+    try:
+        len_ = len(seq)
+    except TypeError:
+        return ()
+    shapes = [find_shape(subseq) for subseq in seq]
+    return (len_,) + tuple(max(sizes) for sizes in izip_longest(*shapes,
+                                                                fillvalue=1))
+
+def fill_array(arr, seq):
+    if arr.ndim == 1:
+        try:
+            len_ = len(seq)
+        except TypeError:
+            len_ = 0
+        arr[:len_] = seq
+        arr[len_:] = 0
+    else:
+        for subarr, subseq in izip_longest(arr, seq, fillvalue=()):
+            fill_array(subarr, subseq)
+
 
 if __name__ == "__main__":
     constants = [str(i) for i in range(10)]

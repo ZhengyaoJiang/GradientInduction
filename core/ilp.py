@@ -44,7 +44,7 @@ class ProgramTemplate():
     def __init__(self, auxiliary, rule_temps, forward_n):
         '''
         :param auxiliary: list of Predicates, set of auxiliary intensional predicates and their arity
-        :param rule_temps: dictionary of strings to tuples of rule templates,
+        :param rule_temps: dictionary of predicate to tuples of rule templates,
         map from each intensional predicate to a pair of rule templates
         :param forward_n: integer4, max number of steps of forward chaining
         '''

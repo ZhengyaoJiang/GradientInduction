@@ -112,3 +112,18 @@ class Clause():
             new_body.append(atom.replace_variable(match))
         return Clause(head, new_body)
 
+    def __hash__(self):
+        hashed_list = list(self.body[:])
+        hashed_list.append(self.head)
+        return hash(tuple(hashed_list))
+
+    def __eq__(self, other):
+        """Overrides the default implementation"""
+        if isinstance(self, other.__class__):
+            return self.__dict__ == other.__dict__
+        return False
+
+    def __ne__(self, other):
+        """Overrides the default implementation (unnecessary in Python 3)"""
+        return not self.__eq__(other)
+

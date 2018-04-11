@@ -14,10 +14,10 @@ class RulesManager():
         self.__predicate_mapping = {} # map from predicate to ground atom indices
         self.all_grounds = []
         self.__generate_grounds()
-        self.all_clauses = defaultdict(list) # dictionary of predicate to list(2d) of lists.
+        self.all_clauses = defaultdict(list) # dictionary of predicate to list(2d) of lists of clause.
         self.__init_all_clauses()
-        self.induction_matrices =defaultdict(list)
-        self.__init_induction_matrices()
+        self.deduction_matrices =defaultdict(list) # dictionary of predicate to list of lists of deduction matrices.
+        self.__init_deduction_matrices()
 
     def __init_all_clauses(self):
         intensionals = [self.__language.target] + self.__template.auxiliary
@@ -27,13 +27,13 @@ class RulesManager():
             self.all_clauses[intensional].append(self.generate_clauses(intensional,
                                                                        self.__template.rule_temps[intensional][1]))
 
-    def __init_induction_matrices(self):
+    def __init_deduction_matrices(self):
         for intensional, clauses in self.all_clauses.items():
             for row in clauses:
                 row_matrices = []
                 for clause in row:
                     row_matrices.append(self.generate_induction_matrix(clause))
-                self.induction_matrices[intensional].append(row_matrices)
+                self.deduction_matrices[intensional].append(row_matrices)
 
 
     def generate_clauses(self, intensional, rule_template):
@@ -58,8 +58,8 @@ class RulesManager():
         :param atom:
         :return:
         '''
-        assert isinstance(atom.terms[0], str)
-        assert isinstance(atom.terms[1], str)
+        for term in atom.terms:
+            assert isinstance(term, str)
         all_indexes = self.__predicate_mapping[atom.predicate]
         for index in all_indexes:
             if self.all_grounds[index] == atom:
@@ -74,8 +74,11 @@ class RulesManager():
         #TODO: genrate matrix n
         satisfy = []
         for atom in self.all_grounds:
-            satisfy.append(self.find_satisfy_by_head(clause, atom))
-        X = np.empty(find_shape(satisfy))
+            if clause.head.predicate == atom.predicate:
+                satisfy.append(self.find_satisfy_by_head(clause, atom))
+            else:
+                satisfy.append([])
+        X = np.empty(find_shape(satisfy), dtype=np.int32)
         fill_array(X, satisfy)
         return X
 
@@ -84,7 +87,7 @@ class RulesManager():
         find combination of ground atoms that can trigger the clause to get a specific conclusion (head atom)
         :param clause:
         :param head:
-        :return:
+        :return: list of tuples of indexes
         '''
         result = [] #list of paris of indexes
         free_body = clause.replace_by_head(head).body
@@ -186,4 +189,4 @@ if __name__ == "__main__":
 
     clauses = man.generate_clauses(Predicate("predecessor", 2), RuleTemplate(1, True))
 
-    man.find_satisfy_by_head(clauses[0], Atom(Predicate("predecessor", 2), ["1", "2"]))
+    print(man.find_satisfy_by_head(clauses[0], Atom(Predicate("predecessor", 2), ["1", "2"])))

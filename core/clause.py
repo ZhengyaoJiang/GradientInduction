@@ -57,7 +57,7 @@ class Atom(object):
         :return: dictionary from int to string, indicating the map from variable to constant. return empty dictionary if
         the two cannot match.
         '''
-        assert self.predicate == target.predicate
+        assert self.predicate == target.predicate, str(self.predicate)+" and "+str(target.predicate)+" can not match"
         match = {}
         for i in range(self.arity):
             if isinstance(self.terms[i], str):

@@ -9,7 +9,7 @@ from itertools import izip_longest
 class RulesManager():
     def __init__(self, language_frame, program_template):
         self.__language = language_frame
-        self.__template = program_template
+        self.program_template = program_template
 
         self.__predicate_mapping = {} # map from predicate to ground atom indices
         self.all_grounds = []
@@ -20,12 +20,12 @@ class RulesManager():
         self.__init_deduction_matrices()
 
     def __init_all_clauses(self):
-        intensionals = [self.__language.target] + self.__template.auxiliary
+        intensionals = [self.__language.target] + self.program_template.auxiliary
         for intensional in intensionals:
             self.all_clauses[intensional].append(self.generate_clauses(intensional,
-                                                                       self.__template.rule_temps[intensional][0]))
+                                                                       self.program_template.rule_temps[intensional][0]))
             self.all_clauses[intensional].append(self.generate_clauses(intensional,
-                                                                       self.__template.rule_temps[intensional][1]))
+                                                                       self.program_template.rule_temps[intensional][1]))
 
     def __init_deduction_matrices(self):
         for intensional, clauses in self.all_clauses.items():
@@ -42,7 +42,7 @@ class RulesManager():
 
         body_variable = tuple(range(intensional.arity+rule_template.variables_n))
         if rule_template.allow_intensional:
-            predicates = list(set(self.__template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
+            predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
         else:
             predicates = [self.__language.extensional]
         terms = []
@@ -105,7 +105,7 @@ class RulesManager():
     def __generate_grounds(self):
         self.all_grounds.append(Atom(Predicate("Empty", 0), []))
         self.__predicate_mapping[Predicate("Empty", 0)] = [0]
-        all_predicates = self.__language.extensional+[self.__language.target]+self.__template.auxiliary
+        all_predicates = self.__language.extensional+[self.__language.target]+self.program_template.auxiliary
         for predicate in all_predicates:
             constant = self.__language.constants
             constants = [constant for _ in range(predicate.arity)]

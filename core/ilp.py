@@ -13,10 +13,10 @@ class ILP():
         :param positive: list of atoms, positive instances
         :param negative: list of atoms, negative instances
         '''
-        self.__language_frame = language_frame
-        self.__background = background
-        self.__positive = positive
-        self.__negative = negative
+        self.language_frame = language_frame
+        self.background = background
+        self.positive = positive
+        self.negative = negative
 
 class LanguageFrame():
     def __init__(self, target, extensional, constants):

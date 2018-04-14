@@ -171,22 +171,3 @@ def fill_array(arr, seq):
         for subarr, subseq in izip_longest(arr, seq, fillvalue=()):
             fill_array(subarr, subseq)
 
-
-if __name__ == "__main__":
-    constants = [str(i) for i in range(10)]
-    background = [Atom(Predicate("succ", 2), [constants[i], constants[i + 1]]) for i in range(9)]
-    background.append(Atom(Predicate("zero", 1), "0"))
-    positive = [Atom(Predicate("predecessor", 2), [constants[i + 1], constants[i]]) for i in range(9)]
-
-    all_atom = [Atom(Predicate("predecessor", 2), [constants[i], constants[j]]) for i in range(9) for j in range(9)]
-    negative = list(set(all_atom) - set(positive))
-
-    language = LanguageFrame(Predicate("predecessor", 2), [Predicate("zero", 1), Predicate("succ", 2)], constants)
-    ilp = ILP(language, background, positive, negative)
-
-    program_temp = ProgramTemplate([], None, None)
-    man = RulesManager(language, program_temp)
-
-    clauses = man.generate_clauses(Predicate("predecessor", 2), RuleTemplate(1, True))
-
-    print(man.find_satisfy_by_head(clauses[0], Atom(Predicate("predecessor", 2), ["1", "2"])))

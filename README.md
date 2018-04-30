@@ -1,5 +1,5 @@
 # GradientInduction
-Replication of "Learning Explanatory Rules from Noisy Data" http://www.jair.org/media/5714/live-5714-10391-jair.pdf
+Replication of "Learning Explanatory Rules from Noisy Data" https://www.jair.org/index.php/jair/article/view/11172
 They built a differentiable first order logic deduction algorithm which can be trained with gradient based optimization,
 and thus "learning the explanatory rules".
 

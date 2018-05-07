@@ -24,5 +24,3 @@ if __name__ == "__main__":
     agent = Agent(man, ilp)
     agent.train()
 
-    for atom, value in agent.valuation2atoms(agent.deduction()).items():
-        print(str(atom)+": "+str(value))

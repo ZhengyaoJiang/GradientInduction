@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 from collections import OrderedDict
 import tensorflow.contrib.eager as tfe
+import os
 from core.rules import RulesManager
 from core.clause import Predicate
 from pprint import pprint
@@ -24,7 +25,21 @@ class Agent(object):
             for predicate, clauses in self.rules_manager.all_clauses.items():
                 self.rule_weights[predicate] = tf.get_variable(predicate.name+"_rule_weights",
                                                                [len(clauses[0]), len(clauses[1])],
+                                                               initializer=tf.random_normal_initializer,
                                                                dtype=tf.float32)
+
+    def show_definition(self):
+        for predicate, clauses in self.rules_manager.all_clauses.items():
+            shape = self.rule_weights[predicate].shape
+            rule_weights = tf.reshape(self.rule_weights[predicate] ,[-1])
+            weights = tf.reshape(tf.nn.softmax(rule_weights)[:, None], shape)
+            indexes = np.nonzero(weights>0.05)
+            print(str(predicate))
+            for i in range(len(indexes[0])):
+                print("weight is {}".format(weights[indexes[0][i], indexes[1][i]]))
+                print(str(clauses[0][indexes[0][i]]))
+                print(str(clauses[1][indexes[1][i]]))
+                print("\n")
 
     def __init_training_data(self, positive, negative):
         for i, atom in enumerate(self.ground_atoms):
@@ -60,7 +75,7 @@ class Agent(object):
         return valuation
 
     def inference_step(self, valuation):
-        deduced_valuation = np.zeros(len(self.ground_atoms))
+        deduced_valuation = tf.zeros(len(self.ground_atoms))
         # deduction_matrices = self.rules_manager.deducation_matrices[predicate]
         for predicate, matrix in self.rules_manager.deduction_matrices.items():
             deduced_valuation += Agent.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
@@ -115,14 +130,30 @@ class Agent(object):
             loss_value = self.loss()
         return tape.gradient(loss_value, self.rule_weights.values())
 
-    def train(self, steps=6000):
+    def train(self, steps=6000, name="test"):
+        str2weights = {str(key):value for key,value in self.rule_weights.items()}
+        checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
+        checkpoint_dir = "./model/"+name
+        checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+
+        try:
+            checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+        except Exception as e:
+            print(e)
         for i in range(steps):
             grads = self.grad()
             optimizer.apply_gradients(zip(grads, self.rule_weights.values()),
                                       global_step=tf.train.get_or_create_global_step())
             loss_avg = self.loss()
+            print("-"*20)
             print("step "+str(i)+" loss is "+str(loss_avg))
+            if i%5==0:
+                self.show_definition()
+                for atom, value in self.valuation2atoms(self.deduction()).items():
+                    print(str(atom)+": "+str(value))
+                checkpoint.save(checkpoint_prefix)
+            print("-"*20+"\n")
 
 
 

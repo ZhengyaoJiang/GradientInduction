@@ -16,7 +16,7 @@ if __name__ == "__main__":
     language = LanguageFrame(Predicate("predecessor",2), [Predicate("zero",1), Predicate("succ",2)], constants)
     ilp = ILP(language, background, positive, negative)
     program_temp = ProgramTemplate([], {Predicate("predecessor", 2): [RuleTemplate(1, True), RuleTemplate(1, True)]},
-                                   10)
+                                   5)
     man = RulesManager(language, program_temp)
 
     # clauses = man.generate_clauses(Predicate("predecessor", 2), RuleTemplate(1, True))

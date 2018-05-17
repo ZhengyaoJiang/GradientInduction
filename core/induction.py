@@ -102,7 +102,7 @@ class Agent(object):
                 c_p.append(tf.maximum(clause1, clause2))
         rule_weights = tf.reshape(rule_weights ,[-1])
         prob_rule_weights = tf.nn.softmax(rule_weights)[:, None]
-        return tf.reduce_mean((tf.stack(c_p)*prob_rule_weights), axis=0)
+        return tf.reduce_sum((tf.stack(c_p)*prob_rule_weights), axis=0)
 
     @staticmethod
     def inference_single_clause(valuation, X):
@@ -121,7 +121,7 @@ class Agent(object):
 
     def loss(self):
         labels = np.array(self.training_data.values(), dtype=np.float32)
-        outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))
+        outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))+1e-10
         loss = -tf.reduce_mean(labels*tf.log(outputs) + (1-labels)*tf.log(1-outputs))
         return loss
 
@@ -130,7 +130,7 @@ class Agent(object):
             loss_value = self.loss()
         return tape.gradient(loss_value, self.rule_weights.values())
 
-    def train(self, steps=6000, name="test"):
+    def train(self, steps=6000, name="test4"):
         str2weights = {str(key):value for key,value in self.rule_weights.items()}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
@@ -156,4 +156,5 @@ class Agent(object):
             print("-"*20+"\n")
 
 
-
+def prob_sum(x, y):
+    return x + y - x*y

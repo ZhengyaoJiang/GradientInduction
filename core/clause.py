@@ -37,8 +37,12 @@ class Atom(object):
 
     def __str__(self):
         terms_str = ""
+        variable_table = ["X", "Y", "Z", "M", "N"]
         for term in self.terms:
-            terms_str += str(term)
+            if isinstance(term, int):
+                terms_str += variable_table[term]
+            else:
+                terms_str += term
             terms_str += ","
         terms_str = terms_str[:-1]
         return self.predicate.name+"("+terms_str+")"

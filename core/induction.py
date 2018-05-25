@@ -23,12 +23,10 @@ class Agent(object):
     def __init__rule_weights(self):
         with tf.variable_scope("rule_weights", reuse=tf.AUTO_REUSE):
             for predicate, clauses in self.rules_manager.all_clauses.items():
-                self.rule_weights[predicate] = [tf.get_variable(predicate.name+"_rule_weights_0",
-                                                               [len(clauses[0]),],
-                                                               initializer=tf.random_normal_initializer,
-                                                               dtype=tf.float32)]
-                self.rule_weights[predicate].append(tf.get_variable(predicate.name+"_rule_weights_1",
-                                                                [len(clauses[1]),],
+                self.rule_weights[predicate] = []
+                for i in range(len(clauses)):
+                    self.rule_weights[predicate].append(tf.get_variable(predicate.name+"_rule_weights"+str(i),
+                                                                [len(clauses[i]),],
                                                                 initializer=tf.random_normal_initializer,
                                                                 dtype=tf.float32))
 
@@ -85,7 +83,6 @@ class Agent(object):
             deduced_valuation += Agent.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
         return deduced_valuation+valuation - deduced_valuation*valuation
 
-
     @staticmethod
     def inference_single_predicate(valuation, deduction_matrices, rule_weights):
         '''
@@ -134,10 +131,10 @@ class Agent(object):
         return tape.gradient(loss_value, self.__all_variables())
 
     def __all_variables(self):
-        return [weights[i] for i in range(2) for weights in self.rule_weights.values()]
+        return [weight for weights in self.rule_weights.values() for weight in weights]
 
-    def train(self, steps=6000, name="probsum_clausemodel"):
-        str2weights = {str(key)+str(i):value[i] for i in range(2) for key,value in self.rule_weights.items()}
+    def train(self, steps=6000, name="probsum_clausemodel2"):
+        str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
         checkpoint_dir = "./model/"+name
@@ -160,7 +157,6 @@ class Agent(object):
                     print(str(atom)+": "+str(value))
                 checkpoint.save(checkpoint_prefix)
             print("-"*20+"\n")
-
 
 def prob_sum(x, y):
     return x + y - x*y

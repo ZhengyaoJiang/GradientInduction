@@ -1,11 +1,10 @@
 from __future__ import print_function, division, absolute_import
+from core.clause import *
+from core.ilp import *
+from core.rules import *
+from core.induction import *
 
-if __name__ == "__main__":
-    from core.clause import *
-    from core.ilp import *
-    from core.rules import *
-    from core.induction import *
-
+def setup_predecessor():
     constants = [str(i) for i in range(10)]
     background = [Atom(Predicate("succ", 2), [constants[i], constants[i + 1]]) for i in range(9)]
     background.append(Atom(Predicate("zero", 1), "0"))
@@ -18,9 +17,11 @@ if __name__ == "__main__":
     program_temp = ProgramTemplate([], {Predicate("predecessor", 2): [RuleTemplate(1, True), RuleTemplate(1, True)]},
                                    5)
     man = RulesManager(language, program_temp)
+    return man, ilp
 
-    # clauses = man.generate_clauses(Predicate("predecessor", 2), RuleTemplate(1, True))
 
-    agent = Agent(man, ilp)
+if __name__ == "__main__":
+    agent = Agent(*setup_predecessor())
     agent.train()
+
 

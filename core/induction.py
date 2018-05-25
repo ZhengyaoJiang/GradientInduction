@@ -23,22 +23,26 @@ class Agent(object):
     def __init__rule_weights(self):
         with tf.variable_scope("rule_weights", reuse=tf.AUTO_REUSE):
             for predicate, clauses in self.rules_manager.all_clauses.items():
-                self.rule_weights[predicate] = tf.get_variable(predicate.name+"_rule_weights",
-                                                               [len(clauses[0]), len(clauses[1])],
+                self.rule_weights[predicate] = [tf.get_variable(predicate.name+"_rule_weights_0",
+                                                               [len(clauses[0]),],
                                                                initializer=tf.random_normal_initializer,
-                                                               dtype=tf.float32)
+                                                               dtype=tf.float32)]
+                self.rule_weights[predicate].append(tf.get_variable(predicate.name+"_rule_weights_1",
+                                                                [len(clauses[1]),],
+                                                                initializer=tf.random_normal_initializer,
+                                                                dtype=tf.float32))
 
     def show_definition(self):
         for predicate, clauses in self.rules_manager.all_clauses.items():
-            shape = self.rule_weights[predicate].shape
-            rule_weights = tf.reshape(self.rule_weights[predicate] ,[-1])
-            weights = tf.reshape(tf.nn.softmax(rule_weights)[:, None], shape)
-            indexes = np.nonzero(weights>0.05)
+            rules_weights = self.rule_weights[predicate]
             print(str(predicate))
-            for i in range(len(indexes[0])):
-                print("weight is {}".format(weights[indexes[0][i], indexes[1][i]]))
-                print(str(clauses[0][indexes[0][i]]))
-                print(str(clauses[1][indexes[1][i]]))
+            for i, rule_weights in enumerate(rules_weights):
+                weights = tf.nn.softmax(rule_weights)
+                indexes = np.nonzero(weights>0.05)[0]
+                print("clasue {}".format(i))
+                for j in range(len(indexes)):
+                    print("weight is {}".format(weights[indexes[j]]))
+                    print(str(clauses[i][indexes[j]]))
                 print("\n")
 
     def __init_training_data(self, positive, negative):
@@ -96,13 +100,12 @@ class Agent(object):
             for matrix in deduction_matrices[i]:
                 result_valuations[i].append(Agent.inference_single_clause(valuation, matrix))
 
-        c_p = [] # flattened
-        for clause1 in result_valuations[0]:
-            for clause2 in result_valuations[1]:
-                c_p.append(tf.maximum(clause1, clause2))
-        rule_weights = tf.reshape(rule_weights ,[-1])
-        prob_rule_weights = tf.nn.softmax(rule_weights)[:, None]
-        return tf.reduce_sum((tf.stack(c_p)*prob_rule_weights), axis=0)
+        c_p = []
+        for i in range(len(result_valuations)):
+            valuations = tf.stack(result_valuations[i])
+            prob_rule_weights = tf.nn.softmax(rule_weights)[i][:, None]
+            c_p.append(tf.reduce_sum(prob_rule_weights*valuations, axis=0))
+        return prob_sum(c_p[0], c_p[1])
 
     @staticmethod
     def inference_single_clause(valuation, X):
@@ -128,10 +131,13 @@ class Agent(object):
     def grad(self):
         with tfe.GradientTape() as tape:
             loss_value = self.loss()
-        return tape.gradient(loss_value, self.rule_weights.values())
+        return tape.gradient(loss_value, self.__all_variables())
 
-    def train(self, steps=6000, name="test4"):
-        str2weights = {str(key):value for key,value in self.rule_weights.items()}
+    def __all_variables(self):
+        return [weights[i] for i in range(2) for weights in self.rule_weights.values()]
+
+    def train(self, steps=6000, name="probsum_clausemodel"):
+        str2weights = {str(key)+str(i):value[i] for i in range(2) for key,value in self.rule_weights.items()}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
         checkpoint_dir = "./model/"+name
@@ -143,7 +149,7 @@ class Agent(object):
             print(e)
         for i in range(steps):
             grads = self.grad()
-            optimizer.apply_gradients(zip(grads, self.rule_weights.values()),
+            optimizer.apply_gradients(zip(grads, self.__all_variables()),
                                       global_step=tf.train.get_or_create_global_step())
             loss_avg = self.loss()
             print("-"*20)

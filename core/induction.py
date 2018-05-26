@@ -123,16 +123,20 @@ class Agent(object):
         Z = Y1*Y2
         return tf.reduce_max(Z, axis=1)
 
-    def loss(self):
+    def loss(self, batch_size=-1):
         labels = np.array(self.training_data.values(), dtype=np.float32)
         outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))
+        if batch_size>0:
+            index = np.random.randint(0, len(labels), batch_size)
+            labels = labels[index]
+            outputs = tf.gather(outputs, index)
         loss = -tf.reduce_mean(labels*tf.log(outputs+1e-10)) - tf.reduce_mean((1-labels)*tf.log(1-outputs+1e-10))
         return loss
 
     def grad(self):
         with tfe.GradientTape() as tape:
-            loss_value = self.loss()
-            weight_decay = 0.0
+            loss_value = self.loss(3)
+            weight_decay = 0.1
             regularization = 0
             for weights in self.__all_variables():
                 weights = tf.nn.softmax(weights)
@@ -143,7 +147,7 @@ class Agent(object):
     def __all_variables(self):
         return [weight for weights in self.rule_weights.values() for weight in weights]
 
-    def train(self, steps=6000, name="fizz05"):
+    def train(self, steps=6000, name="even02"):
         str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)

@@ -41,10 +41,30 @@ def setup_fizz():
     man = RulesManager(language, program_temp)
     return man, ilp
 
+def setup_even():
+    constants = [str(i) for i in range(10)]
+    succ = Predicate("succ", 2)
+    zero = Predicate("zero", 1)
+    target = Predicate("even", 1)
+    pred = Predicate("pred", 2)
+    background = [Atom(succ, [constants[i], constants[i + 1]]) for i in range(9)]
+    background.append(Atom(zero, "0"))
+    positive = [Atom(target, [constants[i]]) for i in range(0, 10, 2)]
+    all_atom = [Atom(target, [constants[i]]) for i in range(10)]
+    negative = list(set(all_atom) - set(positive))
+    language = LanguageFrame(target, [zero, succ], constants)
+    ilp = ILP(language, background, positive, negative)
+    program_temp = ProgramTemplate([pred], {target: [RuleTemplate(1, True), RuleTemplate(1, False)],
+                                            pred: [RuleTemplate(1, True),],
+                                            },
+                                   10)
+    man = RulesManager(language, program_temp)
+    return man, ilp
+
 
 
 if __name__ == "__main__":
-    agent = Agent(*setup_fizz())
+    agent = Agent(*setup_even())
     agent.train()
 
 

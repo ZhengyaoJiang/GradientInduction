@@ -34,7 +34,7 @@ def setup_fizz():
     negative = list(set(all_atom) - set(positive))
     language = LanguageFrame(fizz, [zero, succ], constants)
     ilp = ILP(language, background, positive, negative)
-    program_temp = ProgramTemplate([pred1, pred2], {fizz: [RuleTemplate(1, True), RuleTemplate(0, False)],
+    program_temp = ProgramTemplate([pred1, pred2], {fizz: [RuleTemplate(1, True), RuleTemplate(1, False)],
                                                     pred1: [RuleTemplate(1, True),],
                                                     pred2: [RuleTemplate(1, True),],},
                                    10)

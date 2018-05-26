@@ -90,20 +90,23 @@ class Agent(object):
 
         :param valuation:
         :param deduction_matrices: list of list of matrices
-        :param rule_weights: tensor, shape (number_of_first_clauses, number_of_second_clauses)
+        :param rule_weights: list of tensor, shape (number_of_rule_temps, number_of_clauses_generated)
         :return:
         '''
-        result_valuations = [[], []]
+        result_valuations = [[] for _ in rule_weights]
         for i in range(len(result_valuations)):
             for matrix in deduction_matrices[i]:
                 result_valuations[i].append(Agent.inference_single_clause(valuation, matrix))
 
-        c_p = []
+        c_p = None
         for i in range(len(result_valuations)):
             valuations = tf.stack(result_valuations[i])
-            prob_rule_weights = tf.nn.softmax(rule_weights)[i][:, None]
-            c_p.append(tf.reduce_sum(prob_rule_weights*valuations, axis=0))
-        return prob_sum(c_p[0], c_p[1])
+            prob_rule_weights = tf.nn.softmax(rule_weights[i])[:, None]
+            if c_p==None:
+                c_p = tf.reduce_sum(prob_rule_weights*valuations, axis=0)
+            else:
+                c_p = prob_sum(c_p, tf.reduce_sum(prob_rule_weights*valuations, axis=0))
+        return c_p
 
     @staticmethod
     def inference_single_clause(valuation, X):

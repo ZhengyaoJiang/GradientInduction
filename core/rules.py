@@ -50,7 +50,10 @@ class RulesManager():
             body_variables = [body_variable for _ in range(predicate.arity)]
             terms += self.generate_body_atoms(predicate, *body_variables)
         result_tuples = product(head, terms, terms)
-        return self.prune([Clause(result[0], result[1:]) for result in result_tuples])
+        pruned = self.prune([Clause(result[0], result[1:]) for result in result_tuples])
+        # empty_atom = Atom(Predicate("Empty", 0), [])
+        # pruned.insert(0, Clause(head[0], [empty_atom, empty_atom]))
+        return pruned
 
     def find_index(self,atom):
         '''

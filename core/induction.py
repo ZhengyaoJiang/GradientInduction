@@ -2,6 +2,7 @@ from __future__ import print_function, division, absolute_import
 import numpy as np
 import tensorflow as tf
 from collections import OrderedDict
+import pandas as pd
 import tensorflow.contrib.eager as tfe
 import os
 from core.rules import RulesManager
@@ -121,24 +122,31 @@ class Agent(object):
 
     def loss(self):
         labels = np.array(self.training_data.values(), dtype=np.float32)
-        outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))+1e-10
-        loss = -tf.reduce_mean(labels*tf.log(outputs) + (1-labels)*tf.log(1-outputs))
+        outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))
+        loss = -tf.reduce_mean(labels*tf.log(outputs+1e-10)) - tf.reduce_mean((1-labels)*tf.log(1-outputs+1e-10))
         return loss
 
     def grad(self):
         with tfe.GradientTape() as tape:
             loss_value = self.loss()
+            weight_decay = 0.0
+            regularization = 0
+            for weights in self.__all_variables():
+                weights = tf.nn.softmax(weights)
+                regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
+            loss_value += regularization/len(self.__all_variables())
         return tape.gradient(loss_value, self.__all_variables())
 
     def __all_variables(self):
         return [weight for weights in self.rule_weights.values() for weight in weights]
 
-    def train(self, steps=6000, name="probsum_clausemodel2"):
+    def train(self, steps=6000, name="fizz05"):
         str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
         checkpoint_dir = "./model/"+name
         checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+        losses = []
 
         try:
             checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
@@ -149,6 +157,7 @@ class Agent(object):
             optimizer.apply_gradients(zip(grads, self.__all_variables()),
                                       global_step=tf.train.get_or_create_global_step())
             loss_avg = self.loss()
+            losses.append(float(loss_avg.numpy()))
             print("-"*20)
             print("step "+str(i)+" loss is "+str(loss_avg))
             if i%5==0:
@@ -157,6 +166,7 @@ class Agent(object):
                     print(str(atom)+": "+str(value))
                 checkpoint.save(checkpoint_prefix)
             print("-"*20+"\n")
+            pd.Series(losses).to_csv(name+".csv")
 
 def prob_sum(x, y):
     return x + y - x*y

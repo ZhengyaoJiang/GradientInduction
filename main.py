@@ -19,9 +19,32 @@ def setup_predecessor():
     man = RulesManager(language, program_temp)
     return man, ilp
 
+def setup_fizz():
+    constants = [str(i) for i in range(10)]
+    succ = Predicate("succ", 2)
+    zero = Predicate("zero", 1)
+    fizz = Predicate("fizz", 1)
+    pred1 = Predicate("pred1", 2)
+    pred2 = Predicate("pred2", 2)
+
+    background = [Atom(succ, [constants[i], constants[i + 1]]) for i in range(9)]
+    background.append(Atom(zero, "0"))
+    positive = [Atom(fizz, [constants[i]]) for i in range(0, 10, 3)]
+    all_atom = [Atom(fizz, [constants[i]]) for i in range(10)]
+    negative = list(set(all_atom) - set(positive))
+    language = LanguageFrame(fizz, [zero, succ], constants)
+    ilp = ILP(language, background, positive, negative)
+    program_temp = ProgramTemplate([pred1, pred2], {fizz: [RuleTemplate(1, True), RuleTemplate(0, False)],
+                                                    pred1: [RuleTemplate(1, True),],
+                                                    pred2: [RuleTemplate(1, True),],},
+                                   10)
+    man = RulesManager(language, program_temp)
+    return man, ilp
+
+
 
 if __name__ == "__main__":
-    agent = Agent(*setup_predecessor())
+    agent = Agent(*setup_fizz())
     agent.train()
 
 

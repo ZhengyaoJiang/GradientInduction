@@ -130,13 +130,13 @@ class Agent(object):
             index = np.random.randint(0, len(labels), batch_size)
             labels = labels[index]
             outputs = tf.gather(outputs, index)
-        loss = -tf.reduce_mean(labels*tf.log(outputs+1e-10)) - tf.reduce_mean((1-labels)*tf.log(1-outputs+1e-10))
+        loss = -tf.reduce_mean(labels*tf.log(outputs+1e-10)+(1-labels)*tf.log(1-outputs+1e-10))
         return loss
 
     def grad(self):
         with tfe.GradientTape() as tape:
             loss_value = self.loss(3)
-            weight_decay = 0.1
+            weight_decay = 0.0
             regularization = 0
             for weights in self.__all_variables():
                 weights = tf.nn.softmax(weights)
@@ -147,7 +147,7 @@ class Agent(object):
     def __all_variables(self):
         return [weight for weights in self.rule_weights.values() for weight in weights]
 
-    def train(self, steps=6000, name="even02"):
+    def train(self, steps=6000, name="even03"):
         str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)

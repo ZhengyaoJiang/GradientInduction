@@ -64,7 +64,7 @@ def setup_even():
 
 
 if __name__ == "__main__":
-    agent = Agent(*setup_even())
+    agent = Agent(*setup_fizz())
     agent.train()
 
 

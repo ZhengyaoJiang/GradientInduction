@@ -147,7 +147,7 @@ class Agent(object):
     def __all_variables(self):
         return [weight for weights in self.rule_weights.values() for weight in weights]
 
-    def train(self, steps=6000, name="even03"):
+    def train(self, steps=6000, name="fizz06"):
         str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
         checkpoint = tfe.Checkpoint(**str2weights)
         optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
@@ -177,3 +177,6 @@ class Agent(object):
 
 def prob_sum(x, y):
     return x + y - x*y
+
+class RLAgent(Agent):
+    pass

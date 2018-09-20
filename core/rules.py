@@ -100,8 +100,8 @@ class RulesManager():
         for combination in all_constants_combination:
             all_match.append({free_variables[i]:constant for i,constant in enumerate(combination)})
         for match in all_match:
-            result.append((self.find_index(free_body[0].replace_variable(match)),
-                           self.find_index(free_body[1].replace_variable(match))))
+            result.append((self.find_index(free_body[0].replace(match)),
+                           self.find_index(free_body[1].replace(match))))
         return result
 
     def __generate_grounds(self):

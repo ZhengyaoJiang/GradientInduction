@@ -174,8 +174,17 @@ class Clause():
         body = [atom.replace(match) for atom in self.body]
         return Clause(head, body)
 
+    @property
+    def atoms(self):
+        return list(self.body)+[self.head]
+
+    @property
+    def variables(self):
+        return set().union(*[atom.variables for atom in self.atoms])
+
+
     def __hash__(self):
-        hashed_list = list(self.body[:])
+        hashed_list = list(self.body.copy())
         hashed_list.append(self.head)
         return hash(tuple(hashed_list))
 

@@ -37,19 +37,22 @@ def str2clause(s):
     :param s: 
     :return: 
     """
-    s = s.replace(" ", "")
+    s = s.replace(" ", "").replace(".","")
     atoms = s.split(":-")
     head_str = atoms[0]
-    body_strs = atoms[1].replace("),",") ").split(" ")
     head = str2atom(head_str)
-    body = [str2atom(s) for s in body_strs]
-    clause = Clause(head, body)
-    var_strs = set()
-    for atom in body+[head]:
-        print(atom)
-    for strs in [var_string(atom) for atom in body+[head]]:
-        var_strs = var_strs.union(strs)
-    return clause.replace_by_dict({s: i for i,s in enumerate(var_strs)})
+    if len(atoms) ==2:
+        body_strs = atoms[1].replace("),",") ").split(" ")
+        body = [str2atom(s) for s in body_strs]
+        clause = Clause(head, body)
+        var_strs = set()
+        for atom in body+[head]:
+            print(atom)
+        for strs in [var_string(atom) for atom in body+[head]]:
+            var_strs = var_strs.union(strs)
+        return clause.replace_by_dict({s: i for i,s in enumerate(var_strs)})
+    else:
+        return Clause(head, [])
 
 
 class Atom(object):
@@ -95,11 +98,13 @@ class Atom(object):
 
     @property
     def variables(self):
-        var = []
-        for term in self.terms:
-            if isinstance(term, int):
-                var.append(term)
+        var = [term for term in self.terms if isinstance(term, int)]
         return set(var)
+
+    @property
+    def constants(self):
+        const = [term for term in self.terms if isinstance(term, str)]
+        return set(const)
 
     def match_variable(self, target):
         '''
@@ -182,6 +187,13 @@ class Clause():
     def variables(self):
         return set().union(*[atom.variables for atom in self.atoms])
 
+    @property
+    def constants(self):
+        return set().union(*[atom.constants for atom in self.atoms])
+
+    @property
+    def predicates(self):
+        return set([atom.predicate for atom in self.atoms])
 
     def __hash__(self):
         hashed_list = list(self.body.copy())

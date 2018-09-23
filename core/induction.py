@@ -24,24 +24,22 @@ class Agent(object):
     def __init__rule_weights(self):
         with tf.variable_scope("rule_weights", reuse=tf.AUTO_REUSE):
             for predicate, clauses in self.rules_manager.all_clauses.items():
-                self.rule_weights[predicate] = []
-                for i in range(len(clauses)):
-                    self.rule_weights[predicate].append(tf.get_variable(predicate.name+"_rule_weights"+str(i),
-                                                                [len(clauses[i]),],
-                                                                initializer=tf.random_normal_initializer,
-                                                                dtype=tf.float32))
+                self.rule_weights[predicate] = tf.get_variable(predicate.name + "_rule_weights",
+                                                               [len(clauses[0]), len(clauses[1])],
+                                                               initializer=tf.random_normal_initializer,
+                                                               dtype=tf.float32)
 
     def show_definition(self):
         for predicate, clauses in self.rules_manager.all_clauses.items():
-            rules_weights = self.rule_weights[predicate]
+            shape = self.rule_weights[predicate].shape
+            rule_weights = tf.reshape(self.rule_weights[predicate] ,[-1])
+            weights = tf.reshape(tf.nn.softmax(rule_weights)[:, None], shape)
+            indexes = np.nonzero(weights>0.05)
             print(str(predicate))
-            for i, rule_weights in enumerate(rules_weights):
-                weights = tf.nn.softmax(rule_weights)
-                indexes = np.nonzero(weights>0.05)[0]
-                print("clasue {}".format(i))
-                for j in range(len(indexes)):
-                    print("weight is {}".format(weights[indexes[j]]))
-                    print(str(clauses[i][indexes[j]]))
+            for i in range(len(indexes[0])):
+                print("weight is {}".format(weights[indexes[0][i], indexes[1][i]]))
+                print(str(clauses[0][indexes[0][i]]))
+                print(str(clauses[1][indexes[1][i]]))
                 print("\n")
 
     def __init_training_data(self, positive, negative):
@@ -66,7 +64,7 @@ class Agent(object):
     def valuation2atoms(self, valuation):
         result = {}
         for i, value in enumerate(valuation):
-            if value > 0.01:
+            if value > 0.0:
                 result[self.ground_atoms[i]] = float(value)
         return result
 
@@ -93,20 +91,18 @@ class Agent(object):
         :param rule_weights: list of tensor, shape (number_of_rule_temps, number_of_clauses_generated)
         :return:
         '''
-        result_valuations = [[] for _ in rule_weights]
+        result_valuations = [[], []]
         for i in range(len(result_valuations)):
             for matrix in deduction_matrices[i]:
                 result_valuations[i].append(Agent.inference_single_clause(valuation, matrix))
 
-        c_p = None
-        for i in range(len(result_valuations)):
-            valuations = tf.stack(result_valuations[i])
-            prob_rule_weights = tf.nn.softmax(rule_weights[i])[:, None]
-            if c_p==None:
-                c_p = tf.reduce_sum(prob_rule_weights*valuations, axis=0)
-            else:
-                c_p = prob_sum(c_p, tf.reduce_sum(prob_rule_weights*valuations, axis=0))
-        return c_p
+        c_p = [] # flattened
+        for clause1 in result_valuations[0]:
+            for clause2 in result_valuations[1]:
+                c_p.append(tf.maximum(clause1, clause2))
+        rule_weights = tf.reshape(rule_weights ,[-1])
+        prob_rule_weights = tf.nn.softmax(rule_weights)[:, None]
+        return tf.reduce_mean((tf.stack(c_p)*prob_rule_weights), axis=0)
 
     @staticmethod
     def inference_single_clause(valuation, X):
@@ -135,7 +131,7 @@ class Agent(object):
 
     def grad(self):
         with tfe.GradientTape() as tape:
-            loss_value = self.loss(3)
+            loss_value = self.loss(-1)
             weight_decay = 0.0
             regularization = 0
             for weights in self.__all_variables():
@@ -145,38 +141,43 @@ class Agent(object):
         return tape.gradient(loss_value, self.__all_variables())
 
     def __all_variables(self):
-        return [weight for weights in self.rule_weights.values() for weight in weights]
+        return [weights for weights in self.rule_weights.values()]
 
-    def train(self, steps=6000, name="fizz06"):
-        str2weights = {str(key)+str(i):value[i] for key,value in self.rule_weights.items() for i in range(len(value))}
-        checkpoint = tfe.Checkpoint(**str2weights)
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
-        checkpoint_dir = "./model/"+name
-        checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+    def train(self, steps=300, name=None):
+        str2weights = {str(key):value for key,value in self.rule_weights.items()}
+        if name:
+            checkpoint = tfe.Checkpoint(**str2weights)
+            checkpoint_dir = "./model/"+name
+            checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+            try:
+                checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+            except Exception as e:
+                print(e)
+
         losses = []
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
 
-        try:
-            checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
-        except Exception as e:
-            print(e)
         for i in range(steps):
             grads = self.grad()
             optimizer.apply_gradients(zip(grads, self.__all_variables()),
                                       global_step=tf.train.get_or_create_global_step())
-            loss_avg = self.loss()
-            losses.append(float(loss_avg.numpy()))
+            loss_avg = float(self.loss().numpy())
+            losses.append(loss_avg)
             print("-"*20)
             print("step "+str(i)+" loss is "+str(loss_avg))
             if i%5==0:
                 self.show_definition()
-                for atom, value in self.valuation2atoms(self.deduction()).items():
+                valuation_dict = self.valuation2atoms(self.deduction()).items()
+                for atom, value in valuation_dict:
                     print(str(atom)+": "+str(value))
-                checkpoint.save(checkpoint_prefix)
+                if name:
+                    checkpoint.save(checkpoint_prefix)
+                    pd.Series(np.array(losses)).to_csv(name+".csv")
             print("-"*20+"\n")
-            pd.Series(losses).to_csv(name+".csv")
 
-def prob_sum(x, y):
-    return x + y - x*y
+
+#def prob_sum(x, y):
+#    return x + y - x*y
 
 class RLAgent(Agent):
     pass

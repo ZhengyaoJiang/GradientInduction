@@ -22,9 +22,10 @@ class RulesManager():
     def __init_all_clauses(self):
         intensionals = [self.__language.target] + self.program_template.auxiliary
         for intensional in intensionals:
-            for i in range(len(self.program_template.rule_temps[intensional])):
-                self.all_clauses[intensional].append(self.generate_clauses(intensional,
-                                                     self.program_template.rule_temps[intensional][i]))
+            self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                       self.program_template.rule_temps[intensional][0]))
+            self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                       self.program_template.rule_temps[intensional][1]))
 
     def __init_deduction_matrices(self):
         for intensional, clauses in self.all_clauses.items():
@@ -43,16 +44,13 @@ class RulesManager():
         if rule_template.allow_intensional:
             predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
         else:
-            predicates = list(self.__language.extensional)
+            predicates = self.__language.extensional
         terms = []
         for predicate in predicates:
             body_variables = [body_variable for _ in range(predicate.arity)]
             terms += self.generate_body_atoms(predicate, *body_variables)
         result_tuples = product(head, terms, terms)
-        pruned = self.prune([Clause(result[0], result[1:]) for result in result_tuples])
-        # empty_atom = Atom(Predicate("Empty", 0), [])
-        # pruned.insert(0, Clause(head[0], [empty_atom, empty_atom]))
-        return pruned
+        return self.prune([Clause(result[0], result[1:]) for result in result_tuples])
 
     def find_index(self,atom):
         '''
@@ -172,4 +170,3 @@ def fill_array(arr, seq):
     else:
         for subarr, subseq in izip_longest(arr, seq, fillvalue=()):
             fill_array(subarr, subseq)
-

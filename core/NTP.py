@@ -11,11 +11,11 @@ from collections import namedtuple
 
 ProofState = namedtuple("ProofState", "substitution score")
 """
-substitution is a list of binary tuples, where the first element is the
+substitution is a set of binary tuples, where the first element is the
  variable and second one is a constant.
 score is a float (Tensor) representing the sucessness of the proof.
 """
-FAIL = ProofState(set(), -1)
+FAIL = ProofState(set(), 0)
 
 class NeuralProver():
     def __init__(self, clauses, embeddings):
@@ -27,6 +27,12 @@ class NeuralProver():
         self.__clauses = clauses
         self.__var_manager = VariableManager()
 
+    def prove(self, goal, depth):
+        initial_state = ProofState(set(), 1)
+        states = self.apply_rules(goal, depth, initial_state)
+        scores = tf.stack([state.score for state in states])
+        return tf.reduce_max(scores)
+
     def unify(self, atom1, atom2, state):
         """
         :param atom1: 
@@ -36,21 +42,29 @@ class NeuralProver():
         """
         if atom1.arity != atom2.arity:
             return FAIL
-        substitution = state.substitution[:]
+        substitution = state.substitution.copy()
         score = state.score
-        for i in range(atom1.arity):
-            term1 = atom1.terms[i]
-            term2 = atom2.terms[i]
-            if is_variable(term1) and is_variable(term2):
+        for i in range(atom1.arity+1):
+            if i==0:
+                symbol1 = atom1.predicate
+                symbol2 = atom2.predicate
+            else:
+                symbol1 = atom1.terms[i-1]
+                symbol2 = atom2.terms[i-1]
+            if is_variable(symbol1) and is_variable(symbol2):
                 pass
-            elif is_variable(term1):
-                substitution.append((term1, term2))
-            elif is_variable(term2):
-                substitution.append((term2, term1))
+            elif is_variable(symbol1):
+                substitution.add((symbol1, symbol2))
+            elif is_variable(symbol2):
+                substitution.add((symbol2, symbol1))
             else:
                 score = tf.minimum(score,
                                    tf.exp(-tf.reduce_sum(
-                                       (self.__embeddings[term1]- self.__embeddings[term2])**2)))
+                                       (self.__embeddings[symbol1]- self.__embeddings[symbol2])**2)))
+                """
+                score = score*tf.exp(-tf.reduce_sum(
+                                       (self.__embeddings[symbol1]- self.__embeddings[symbol2])**2))
+                """
         return ProofState(substitution, score)
 
     def apply_rules(self, goal, depth, state):
@@ -99,12 +113,41 @@ class NeuralProver():
         if len(body)==0:
             return [state]
         states = []
-        for i, atom in enumerate(body):
-            or_states = self.apply_rules(NeuralProver.substitute(atom, state.substitution),
-                                      depth-1, state)
-            for or_state in or_states:
-                states.extend(self.apply_rule(body[i+1:],depth,or_state))
+        or_states = self.apply_rules(NeuralProver.substitute(body[0], state.substitution),
+                                     depth-1, state)
+        for or_state in or_states:
+            states.extend(self.apply_rule(body[1:],depth,or_state))
         return states
+
+    def loss(self, positive, negative, depth):
+        positive_loss = [-tf.log(self.prove(atom, depth)+1e-5) for atom in positive]
+        negative_loss = [-tf.log(1 - self.prove(atom, depth)+1e-5) for atom in negative]
+        return tf.reduce_mean(tf.stack(positive_loss+negative_loss))
+
+    def grad(self, positive, negative, depth):
+        with tfe.GradientTape() as tape:
+            loss_value = self.loss(positive, negative, depth)
+            weight_decay = 0.01
+            regularization = 0
+            for weights in self.__embeddings.variables:
+                weights = tf.nn.softmax(weights)
+                regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
+            loss_value += regularization/len(self.__embeddings.variables)
+        return tape.gradient(loss_value, self.__embeddings.variables)
+
+    def train(self, positive, negative, depth, steps):
+        losses = []
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        for i in range(steps):
+            grads = self.grad(positive, negative, depth)
+            optimizer.apply_gradients(zip(grads, self.__embeddings.variables),
+                                      global_step=tf.train.get_or_create_global_step())
+            loss_avg = self.loss(positive, negative, depth)
+            losses.append(float(loss_avg.numpy()))
+            print("-"*20)
+            print("step "+str(i)+" loss is "+str(loss_avg))
+
+
 
 class VariableManager():
     def __init__(self):
@@ -121,13 +164,17 @@ class Embeddings():
         self.constants = set(constants)
         self.para_predicates = set(para_predicates)
         self.embbedings = {}
-        for predicate in predicates:
+        for predicate in predicates.union(para_predicates):
             self.embbedings[predicate] = tf.get_variable(predicate.name,shape=[dimension],dtype=tf.float32)
         for constant in constants:
             self.embbedings[constant] = tf.get_variable(constant,shape=[dimension],dtype=tf.float32)
 
     def __getitem__(self, key):
         return self.embbedings[key]
+
+    @property
+    def variables(self):
+        return self.embbedings.values()
 
     @staticmethod
     def from_clauses(clauses, para_clauses):
@@ -150,9 +197,36 @@ if __name__ == "__main__":
     clause_str = ["fatherOf(abe, homer)","parentOf(homer,cart)",
                   "grandFatherOf(X,Y):-fatherOf(X,Z),parentOf(Z,Y)"]
     clauses = [str2clause(s) for s in clause_str]
-    # para_clauses = [str2clause("r(X,Y):-p(X,Z),q(Z,Y)")]
     para_clauses = []
     embeddings = Embeddings.from_clauses(clauses, para_clauses)
     ntp = NeuralProver(clauses, embeddings)
-    states = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"),2,ProofState([],1))
-    print(states)
+    score = ntp.prove(str2atom("grandFatherOf(abe,cart)"),2)
+    assert float(score) == 1.0
+
+    clause_str = ["fatherOf(abe, homer)","parentOf(homer,cart)"]
+    para_clauses = [str2clause("grandFatherOf(X,Y):-p(X,Z),q(Z,Y)")]
+    clauses = [str2clause(s) for s in clause_str]
+    positive = [str2atom("grandFatherOf(abe,cart)")]
+    negative = [str2atom("grandFatherOf(cart,abe)"), str2atom("grandFatherOf(abe,homer)"),
+                str2atom("grandFatherOf(homer,cart)"), str2atom("grandFatherOf(cart,homer)")]
+    embeddings = Embeddings.from_clauses(clauses, para_clauses)
+    ntp = NeuralProver(clauses+para_clauses, embeddings)
+    ntp.train(positive,negative,2,500)
+    score = ntp.prove(str2atom("grandFatherOf(abe,cart)"),2)
+    score2 = ntp.prove(str2atom("grandFatherOf(cart,abe)"),2)
+    score3 = ntp.prove(str2atom("grandFatherOf(abe,homer)"),2)
+    score4 = ntp.prove(str2atom("grandFatherOf(homer,cart)"),2)
+    score5 = ntp.prove(str2atom("grandFatherOf(cart,homer)"),2)
+    score6 = ntp.prove(str2atom("grandFatherOf(homer,abe)"),2)
+    similarity = ntp.unify(str2atom("p(abe,cart)"), str2atom("fatherOf(abe,cart)"), ProofState(set(), 1))
+    similarity2 = ntp.unify(str2atom("q(abe,cart)"), str2atom("parentOf(abe,cart)"), ProofState(set(), 1))
+    similarity3 = ntp.unify(str2atom("p(abe,cart)"), str2atom("parentOf(abe,cart)"), ProofState(set(), 1))
+    a1 = ntp.apply_rule([str2atom("p(abe,homer)"), str2atom("q(homer,cart)")], 2, ProofState(set(), 1))
+    a2 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
+    a3 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
+    a4 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
+
+
+    assert float(score) == 1.0
+
+

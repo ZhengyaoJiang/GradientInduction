@@ -3,9 +3,7 @@ import numpy as np
 import tensorflow as tf
 from collections import OrderedDict
 import tensorflow.contrib.eager as tfe
-from core.clause import is_variable
-
-tf.enable_eager_execution()
+from core.clause import is_variable, Clause
 
 from collections import namedtuple
 
@@ -26,6 +24,16 @@ class NeuralProver():
         self.__embeddings = embeddings
         self.__clauses = clauses
         self.__var_manager = VariableManager()
+
+    @staticmethod
+    def from_ILP(ilp, para_clauses):
+        """
+        construct a NTP from a ILP definition
+        :return:
+        """
+        background = [Clause(atom,[]) for atom in ilp.background]
+        embeddings = Embeddings.from_clauses(background, para_clauses)
+        return NeuralProver(background+para_clauses, embeddings)
 
     def prove(self, goal, depth):
         initial_state = ProofState(set(), 1)
@@ -146,6 +154,7 @@ class NeuralProver():
             losses.append(float(loss_avg.numpy()))
             print("-"*20)
             print("step "+str(i)+" loss is "+str(loss_avg))
+        return losses
 
 
 
@@ -193,6 +202,7 @@ class Embeddings():
         return Embeddings(predicates, para_predicates, constants)
 
 if __name__ == "__main__":
+    tf.enable_eager_execution()
     from core.clause import str2clause,str2atom
     clause_str = ["fatherOf(abe, homer)","parentOf(homer,cart)",
                   "grandFatherOf(X,Y):-fatherOf(X,Z),parentOf(Z,Y)"]

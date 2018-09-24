@@ -5,6 +5,7 @@ import ray
 from core.rules import *
 from core.induction import *
 from core.clause import str2atom,str2clause
+from core.NTP import NeuralProver
 
 def setup_predecessor():
     constants = [str(i) for i in range(10)]
@@ -63,15 +64,25 @@ def setup_even():
     man = RulesManager(language, program_temp)
     return man, ilp
 
-#@ray.remote
+@ray.remote
 def start_DILP(task, name):
+    import tensorflow as tf
+    tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
     agent = Agent(man, ilp)
-    agent.train(name=name)
+    return agent.train(name=name)[-1]
 
+@ray.remote
+def start_NTP(task, name=None):
+    import tensorflow as tf
+    tf.enable_eager_execution()
+    if task == "predecessor":
+        man, ilp = setup_predecessor()
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-p(X,Z),q(Z,Y)")])
+    return ntp.train(ilp.positive,ilp.negative,2,600)[-1]
 
 if __name__ == "__main__":
-    #ray.init()
-    #ray.get([start_DILP.remote("predecessor", None) for i in range(3)])
-    start_DILP("predecessor", "predecessor"+"k")
+    ray.init()
+    print(ray.get([start_NTP.remote("predecessor", "p"+str(i)) for i in range(10)]))
+    #start_NTP("predecessor", "predecessor"+"21")

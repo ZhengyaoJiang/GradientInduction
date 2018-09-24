@@ -9,7 +9,6 @@ from core.rules import RulesManager
 from core.clause import Predicate
 from pprint import pprint
 
-tf.enable_eager_execution()
 
 class Agent(object):
     def __init__(self, rules_manager, ilp):
@@ -64,7 +63,7 @@ class Agent(object):
     def valuation2atoms(self, valuation):
         result = {}
         for i, value in enumerate(valuation):
-            if value > 0.0:
+            if value > 0.01:
                 result[self.ground_atoms[i]] = float(value)
         return result
 
@@ -102,7 +101,7 @@ class Agent(object):
                 c_p.append(tf.maximum(clause1, clause2))
         rule_weights = tf.reshape(rule_weights ,[-1])
         prob_rule_weights = tf.nn.softmax(rule_weights)[:, None]
-        return tf.reduce_mean((tf.stack(c_p)*prob_rule_weights), axis=0)
+        return tf.reduce_sum((tf.stack(c_p)*prob_rule_weights), axis=0)
 
     @staticmethod
     def inference_single_clause(valuation, X):
@@ -144,6 +143,11 @@ class Agent(object):
         return [weights for weights in self.rule_weights.values()]
 
     def train(self, steps=300, name=None):
+        """
+        :param steps:
+        :param name:
+        :return: the loss history
+        """
         str2weights = {str(key):value for key,value in self.rule_weights.items()}
         if name:
             checkpoint = tfe.Checkpoint(**str2weights)
@@ -174,6 +178,7 @@ class Agent(object):
                     checkpoint.save(checkpoint_prefix)
                     pd.Series(np.array(losses)).to_csv(name+".csv")
             print("-"*20+"\n")
+        return losses
 
 
 #def prob_sum(x, y):

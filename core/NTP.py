@@ -1,19 +1,21 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
+import itertools
 import tensorflow as tf
-from collections import OrderedDict
 import tensorflow.contrib.eager as tfe
-from core.clause import is_variable, Clause
+import copy
+from core.clause import is_variable, Clause, Atom
 
 from collections import namedtuple
+K = 5 # embedding vector length
 
 ProofState = namedtuple("ProofState", "substitution score")
 """
-substitution is a set of binary tuples, where the first element is the
- variable and second one is a constant.
-score is a float (Tensor) representing the sucessness of the proof.
+substitution is list to set of binary tuples, where the first element is the
+ variable and second one is a list of constant be replaced.
+score is a vector (Tensor) representing the sucessness scores of the proof.
 """
-FAIL = ProofState(set(), 0)
+FAIL = ProofState(None, 0)
 
 class NeuralProver():
     def __init__(self, clauses, embeddings):
@@ -22,8 +24,16 @@ class NeuralProver():
         clause with empty body.
         """
         self.__embeddings = embeddings
-        self.__clauses = clauses
+        self.__grouped_clauses = self.group_clauses(clauses)
         self.__var_manager = VariableManager()
+
+    def group_clauses(self, clauses):
+        """
+        :param clauses:
+        :return: key-group dictionaries
+        """
+        return {k: list(v) for k, v in itertools.groupby(clauses,
+                key=(lambda c: (c.head.arity, c.head.variable_positions)))}
 
     @staticmethod
     def from_ILP(ilp, para_clauses):
@@ -35,47 +45,86 @@ class NeuralProver():
         embeddings = Embeddings.from_clauses(background, para_clauses)
         return NeuralProver(background+para_clauses, embeddings)
 
-    def prove(self, goal, depth):
-        initial_state = ProofState(set(), 1)
-        states = self.apply_rules(goal, depth, initial_state)
-        scores = tf.stack([state.score for state in states])
-        return tf.reduce_max(scores)
+    def prove(self, goals, depth):
+        if isinstance(goals, Atom):
+            goals = [goals]
+        batch_size = len(goals)
+        initial_state = ProofState([set() for _ in range(batch_size)], tf.ones(batch_size))
+        states = self.apply_rules(goals, depth, initial_state)
+        scores = tf.stack([state.score for state in states if state != FAIL])
+        return tf.reduce_max(scores, axis=0)
 
-    def unify(self, atom1, atom2, state):
+    def batch_unify(self, heads, atoms, state):
         """
-        :param atom1: 
-        :param atom2: 
+        :param heads: clause heads with the same structure
+        :param atoms: atoms, which all has the same structures and arities
         :param state: 
-        :return: result proof state with substituted variables and new scores 
+        :return: result proof states with substituted variables and new scores(ordered)
         """
-        if atom1.arity != atom2.arity:
-            return FAIL
-        substitution = state.substitution.copy()
-        score = state.score
-        for i in range(atom1.arity+1):
-            if i==0:
-                symbol1 = atom1.predicate
-                symbol2 = atom2.predicate
-            else:
-                symbol1 = atom1.terms[i-1]
-                symbol2 = atom2.terms[i-1]
-            if is_variable(symbol1) and is_variable(symbol2):
-                pass
-            elif is_variable(symbol1):
-                substitution.add((symbol1, symbol2))
-            elif is_variable(symbol2):
-                substitution.add((symbol2, symbol1))
-            else:
-                score = tf.minimum(score,
-                                   tf.exp(-tf.reduce_sum(
-                                       (self.__embeddings[symbol1]- self.__embeddings[symbol2])**2)))
-                """
-                score = score*tf.exp(-tf.reduce_sum(
-                                       (self.__embeddings[symbol1]- self.__embeddings[symbol2])**2))
-                """
-        return ProofState(substitution, score)
+        results = [None for _ in range(len(heads))]
+        substitutions = [copy.deepcopy(state.substitution) for _ in heads]
+        batch_size = len(atoms)
+        constants1 = [[] for _ in range(atoms[0].arity+1)]
+        constants2 = [[] for _ in range(atoms[0].arity+1)]
+        if heads[0].arity != atoms[0].arity:
+            return [FAIL for _ in heads]
 
-    def apply_rules(self, goal, depth, state):
+        for i,head in enumerate(heads):
+            for j in range(batch_size):
+                atom = atoms[j]
+                for k in range(atom.arity+1):
+                    if k==0:
+                        symbol1 = head.predicate
+                        symbol2 = atom.predicate
+                    else:
+                        symbol1 = head.terms[k - 1]
+                        symbol2 = atom.terms[k - 1]
+                    if is_variable(symbol1) and is_variable(symbol2):
+                        pass
+                    elif is_variable(symbol1):
+                        substitutions[i][j].add((symbol1, symbol2))
+                    elif is_variable(symbol2):
+                        substitutions[i][j].add((symbol2, symbol1))
+                    else:
+                        if j==0:
+                            constants1[k].append(symbol1)
+                        if i==0:
+                            constants2[k].append(symbol2)
+        for i in reversed(range(len(constants1))):
+            if not constants1[i] or not constants2[i]:
+                del constants1[i]
+                del constants2[i]
+        position_n = len(constants1)
+        scores = tf.zeros([len(heads),1])*state.score
+        if position_n==atoms[0].arity+1:
+            c1 = constants1
+            c2 = constants2
+            A = self.symbols2embeddinds(c1)
+            B = self.symbols2embeddinds(c2)
+            new_scroes = tf.exp(-tf.sqrt(
+                                 tf.matmul(tf.reduce_sum(A**2, axis=2, keep_dims=True),
+                                           tf.ones([position_n, 1,batch_size]))
+                               +tf.matmul(tf.ones([position_n, len(heads),1]),
+                                          tf.transpose(tf.reduce_sum(B**2, axis=2, keep_dims=True),
+                                                       [0,2,1]))
+                                 -2*tf.matmul(A,B, transpose_b=True))
+                           )
+            scores = tf.reduce_min(new_scroes,axis=0)
+        for i in range(len(heads)):
+            results[i] = ProofState(substitutions[i], scores[i])
+        return results
+
+    def symbols2embeddinds(self,symbols):
+        """
+        :param symbols: list list of symbols. [number of positions, number of symbols]
+        :return:
+        """
+        positions_list = []
+        for symbol_pos in symbols:
+            positions_list.append(tf.stack([self.__embeddings[symbol] for symbol in symbol_pos]))
+        return tf.stack(positions_list)
+
+    def apply_rules(self, goals, depth, state):
         """
         the or module in the original article
         :param goal: 
@@ -86,28 +135,35 @@ class NeuralProver():
         states = []
         if not isinstance(state, ProofState):
             raise ValueError()
-        for clause in self.__clauses:
-            clause = self.__var_manager.activate(clause)
-            states.extend(self.apply_rule(
-                clause.body, depth, self.unify(clause.head, goal, state)))
+        all_clauses = []
+        for clauses_group in self.__grouped_clauses.values():
+            unified_states = []
+            clauses = [self.__var_manager.activate(clause) for clause in clauses_group]
+            all_clauses.extend(clauses)
+            unified_states.extend(self.batch_unify([clause.head for clause in clauses],goals, state))
+            for s,c in zip(unified_states,clauses):
+                states.extend(self.apply_rule(c.body, depth, s))
         return states
 
     @staticmethod
-    def substitute(atom, substitution):
+    def substitute(atom, substitutions):
         """
         substitute variables in an atom given the list of substitution pairs
         :param atom:
         :param substitution: list of binary tuples
         :return:
         """
-        replace_dict = {pair[0]: pair[1] for pair in substitution}
-        return atom.replace(replace_dict)
+        results = []
+        for substitution in substitutions:
+            replace_dict = {pair[0]: pair[1] for pair in substitution}
+            results.append(atom.replace(replace_dict))
+        return results
 
     def apply_rule(self, body, depth, state):
         """
         the original and module.
         Loop through all atoms of the body and apply apply_rules on each atom.
-        :param body: the list of subgoals
+        :param bodys: the list of list of subgoals, [batch_size, number of goals]
         :param depth:
         :param state:
         :return:
@@ -128,9 +184,9 @@ class NeuralProver():
         return states
 
     def loss(self, positive, negative, depth):
-        positive_loss = [-tf.log(self.prove(atom, depth)+1e-5) for atom in positive]
-        negative_loss = [-tf.log(1 - self.prove(atom, depth)+1e-5) for atom in negative]
-        return tf.reduce_mean(tf.stack(positive_loss+negative_loss))
+        prediction = self.prove(positive+negative, depth)
+        label = tf.concat([tf.ones(len(positive)), tf.zeros(len(negative))],axis=0)
+        return -tf.reduce_mean(label*tf.log(prediction)+(1-label+1e-10)*tf.log(1-prediction+1e-10))
 
     def grad(self, positive, negative, depth):
         with tfe.GradientTape() as tape:
@@ -210,7 +266,7 @@ if __name__ == "__main__":
     para_clauses = []
     embeddings = Embeddings.from_clauses(clauses, para_clauses)
     ntp = NeuralProver(clauses, embeddings)
-    score = ntp.prove(str2atom("grandFatherOf(abe,cart)"),2)
+    score = ntp.prove([str2atom("grandFatherOf(abe,cart)")],2)
     assert float(score) == 1.0
 
     clause_str = ["fatherOf(abe, homer)","parentOf(homer,cart)"]
@@ -228,9 +284,9 @@ if __name__ == "__main__":
     score4 = ntp.prove(str2atom("grandFatherOf(homer,cart)"),2)
     score5 = ntp.prove(str2atom("grandFatherOf(cart,homer)"),2)
     score6 = ntp.prove(str2atom("grandFatherOf(homer,abe)"),2)
-    similarity = ntp.unify(str2atom("p(abe,cart)"), str2atom("fatherOf(abe,cart)"), ProofState(set(), 1))
-    similarity2 = ntp.unify(str2atom("q(abe,cart)"), str2atom("parentOf(abe,cart)"), ProofState(set(), 1))
-    similarity3 = ntp.unify(str2atom("p(abe,cart)"), str2atom("parentOf(abe,cart)"), ProofState(set(), 1))
+    similarity = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("fatherOf(abe,cart)")], ProofState([set()], [1]))
+    similarity2 = ntp.batch_unify([str2atom("q(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))
+    similarity3 = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))
     a1 = ntp.apply_rule([str2atom("p(abe,homer)"), str2atom("q(homer,cart)")], 2, ProofState(set(), 1))
     a2 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
     a3 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))

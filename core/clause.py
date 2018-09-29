@@ -102,6 +102,11 @@ class Atom(object):
         return set(var)
 
     @property
+    def variable_positions(self):
+        pos = [i for i,term in enumerate(self.terms) if isinstance(term, int)]
+        return tuple(pos)
+
+    @property
     def constants(self):
         const = [term for term in self.terms if isinstance(term, str)]
         return set(const)

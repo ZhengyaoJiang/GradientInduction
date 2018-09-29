@@ -79,7 +79,7 @@ def start_NTP(task, name=None):
     tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-p(X,Z),q(Z,Y)")])
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s(Z,Y)")])
     return ntp.train(ilp.positive,ilp.negative,2,600)[-1]
 
 if __name__ == "__main__":

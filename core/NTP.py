@@ -95,21 +95,25 @@ class NeuralProver():
                 del constants1[i]
                 del constants2[i]
         position_n = len(constants1)
-        scores = tf.zeros([len(heads),1])*state.score
-        if position_n==atoms[0].arity+1:
+        scores = tf.ones([len(heads),1])*state.score
+        if position_n>0:
             c1 = constants1
             c2 = constants2
             A = self.symbols2embeddinds(c1)
             B = self.symbols2embeddinds(c2)
+            # tf.sqrt here cause gradient to be nan?
             new_scroes = tf.exp(-tf.sqrt(
                                  tf.matmul(tf.reduce_sum(A**2, axis=2, keep_dims=True),
                                            tf.ones([position_n, 1,batch_size]))
                                +tf.matmul(tf.ones([position_n, len(heads),1]),
                                           tf.transpose(tf.reduce_sum(B**2, axis=2, keep_dims=True),
                                                        [0,2,1]))
-                                 -2*tf.matmul(A,B, transpose_b=True))
+                                 -2*tf.matmul(A,tf.transpose(B, [0,2,1]))+1e-5)
                            )
-            scores = tf.reduce_min(new_scroes,axis=0)
+            new_scroes = tf.reduce_prod(new_scroes,axis=0)
+            scores = scores*new_scroes
+            if tf.reduce_max(scores) >=0.99:
+                pass
         for i in range(len(heads)):
             results[i] = ProofState(substitutions[i], scores[i])
         return results
@@ -163,7 +167,7 @@ class NeuralProver():
         """
         the original and module.
         Loop through all atoms of the body and apply apply_rules on each atom.
-        :param bodys: the list of list of subgoals, [batch_size, number of goals]
+        :param body: the list of subgoals
         :param depth:
         :param state:
         :return:
@@ -184,27 +188,35 @@ class NeuralProver():
         return states
 
     def loss(self, positive, negative, depth):
-        prediction = self.prove(positive+negative, depth)
+        prediction = self.prove(np.concatenate([positive,negative],0), depth)
         label = tf.concat([tf.ones(len(positive)), tf.zeros(len(negative))],axis=0)
-        return -tf.reduce_mean(label*tf.log(prediction)+(1-label+1e-10)*tf.log(1-prediction+1e-10))
+        return -tf.reduce_mean(label*tf.log(prediction+1e-5)+(1.0-label)*tf.log(1-prediction+1e-5))
 
     def grad(self, positive, negative, depth):
         with tfe.GradientTape() as tape:
             loss_value = self.loss(positive, negative, depth)
-            weight_decay = 0.01
+            weight_decay = 0.0 # This will cause local minimum?
             regularization = 0
             for weights in self.__embeddings.variables:
-                weights = tf.nn.softmax(weights)
-                regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
+                regularization += tf.nn.l2_loss(weights)*weight_decay
             loss_value += regularization/len(self.__embeddings.variables)
         return tape.gradient(loss_value, self.__embeddings.variables)
 
-    def train(self, positive, negative, depth, steps):
+    def sample_minibatch(self, positive, negative, batch_size, ratio=0.2):
+        positive_n = int(ratio*batch_size)
+        negative_n = batch_size - positive_n
+        positive = np.random.choice(positive, positive_n)
+        negative = np.random.choice(negative, negative_n)
+        return positive, negative
+
+    def train(self, positive, negative, depth, steps, batch_size=32):
         losses = []
         optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         for i in range(steps):
-            grads = self.grad(positive, negative, depth)
-            optimizer.apply_gradients(zip(grads, self.__embeddings.variables),
+            p_sample, n_sample = self.sample_minibatch(positive, negative, batch_size)
+            grads = self.grad(p_sample, n_sample, depth)
+            clipped_grads = [tf.clip_by_value(grad, -1., 1.) for grad in grads]
+            optimizer.apply_gradients(zip(clipped_grads, self.__embeddings.variables),
                                       global_step=tf.train.get_or_create_global_step())
             loss_avg = self.loss(positive, negative, depth)
             losses.append(float(loss_avg.numpy()))
@@ -230,9 +242,11 @@ class Embeddings():
         self.para_predicates = set(para_predicates)
         self.embbedings = {}
         for predicate in predicates.union(para_predicates):
-            self.embbedings[predicate] = tf.get_variable(predicate.name,shape=[dimension],dtype=tf.float32)
+            self.embbedings[predicate] = tf.get_variable(predicate.name,shape=[dimension],dtype=tf.float32,
+                                                         initializer=tf.contrib.layers.xavier_initializer())
         for constant in constants:
-            self.embbedings[constant] = tf.get_variable(constant,shape=[dimension],dtype=tf.float32)
+            self.embbedings[constant] = tf.get_variable(constant,shape=[dimension],dtype=tf.float32,
+                                                        initializer=tf.contrib.layers.xavier_initializer())
 
     def __getitem__(self, key):
         return self.embbedings[key]
@@ -267,7 +281,11 @@ if __name__ == "__main__":
     embeddings = Embeddings.from_clauses(clauses, para_clauses)
     ntp = NeuralProver(clauses, embeddings)
     score = ntp.prove([str2atom("grandFatherOf(abe,cart)")],2)
-    assert float(score) == 1.0
+    assert float(score) > 0.98
+    score2 = ntp.prove([str2atom("grandFatherOf(homer,cart)")],2)
+    score3 = ntp.prove([str2atom("parentOf(homer,homer)")],2)
+    states = ntp.apply_rule([str2atom("fatherOf(cart, homer)"), str2atom("parentOf(homer,homer)")],
+                            2, ProofState([set()], [1]))
 
     clause_str = ["fatherOf(abe, homer)","parentOf(homer,cart)"]
     para_clauses = [str2clause("grandFatherOf(X,Y):-p(X,Z),q(Z,Y)")]
@@ -277,7 +295,7 @@ if __name__ == "__main__":
                 str2atom("grandFatherOf(homer,cart)"), str2atom("grandFatherOf(cart,homer)")]
     embeddings = Embeddings.from_clauses(clauses, para_clauses)
     ntp = NeuralProver(clauses+para_clauses, embeddings)
-    ntp.train(positive,negative,2,500)
+    ntp.train(positive,negative,2,3000)
     score = ntp.prove(str2atom("grandFatherOf(abe,cart)"),2)
     score2 = ntp.prove(str2atom("grandFatherOf(cart,abe)"),2)
     score3 = ntp.prove(str2atom("grandFatherOf(abe,homer)"),2)
@@ -287,11 +305,6 @@ if __name__ == "__main__":
     similarity = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("fatherOf(abe,cart)")], ProofState([set()], [1]))
     similarity2 = ntp.batch_unify([str2atom("q(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))
     similarity3 = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))
-    a1 = ntp.apply_rule([str2atom("p(abe,homer)"), str2atom("q(homer,cart)")], 2, ProofState(set(), 1))
-    a2 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
-    a3 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
-    a4 = ntp.apply_rules(str2atom("grandFatherOf(abe,cart)"), 2, ProofState(set(), 1))
-
 
     assert float(score) == 1.0
 

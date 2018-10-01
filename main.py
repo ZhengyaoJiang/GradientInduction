@@ -10,12 +10,11 @@ from core.NTP import NeuralProver
 def setup_predecessor():
     constants = [str(i) for i in range(10)]
     background = [Atom(Predicate("succ", 2), [constants[i], constants[i + 1]]) for i in range(9)]
-    background.append(Atom(Predicate("zero", 1), "0"))
-    positive = [Atom(Predicate("predecessor", 2), [constants[i + 2], constants[i]]) for i in range(8)]
-    all_atom = [Atom(Predicate("predecessor", 2), [constants[i], constants[j]]) for i in range(9) for j in range(9)]
+    positive = [Atom(Predicate("predecessor", 2), [constants[i], constants[i+2]]) for i in range(8)]
+    all_atom = [Atom(Predicate("predecessor", 2), [constants[i], constants[j]]) for i in range(10) for j in range(10)]
     negative = list(set(all_atom) - set(positive))
 
-    language = LanguageFrame(Predicate("predecessor",2), [Predicate("zero",1), Predicate("succ",2)], constants)
+    language = LanguageFrame(Predicate("predecessor",2), [Predicate("succ",2)], constants)
     ilp = ILP(language, background, positive, negative)
     program_temp = ProgramTemplate([], {Predicate("predecessor", 2): [RuleTemplate(1, False), RuleTemplate(0, False)]},
                                    4)
@@ -76,13 +75,16 @@ def start_DILP(task, name):
 @ray.remote
 def start_NTP(task, name=None):
     import tensorflow as tf
+    from core.NTP import ProofState
     tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s(Z,Y)")])
-    return ntp.train(ilp.positive,ilp.negative,2,600)[-1]
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)")])
+    final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
+    similarity = ntp.batch_unify([str2atom("s(0,1)")], [str2atom("succ(0,1)")], ProofState([set()], [1]))
+    return final_loss
 
 if __name__ == "__main__":
     ray.init()
-    print(ray.get([start_NTP.remote("predecessor", "p"+str(i)) for i in range(10)]))
+    print(ray.get([start_NTP.remote("predecessor", "p"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")

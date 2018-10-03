@@ -4,6 +4,7 @@ import itertools
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 import copy
+import pandas as pd
 from core.clause import is_variable, Clause, Atom
 
 from collections import namedtuple
@@ -37,6 +38,12 @@ class NeuralProver():
         """
         return {k: list(v) for k, v in itertools.groupby(clauses,
                 key=(lambda c: (c.head.arity, c.head.variable_positions)))}
+
+    @property
+    def similarity_table(self):
+        df = pd.DataFrame(self.similarities.numpy(), index=self.all_symbols,
+                          columns=self.all_symbols)
+        return df
 
     @staticmethod
     def get_similarities(A,B):
@@ -316,6 +323,7 @@ if __name__ == "__main__":
     score4 = ntp.prove(str2atom("grandFatherOf(homer,cart)"),2)
     score5 = ntp.prove(str2atom("grandFatherOf(cart,homer)"),2)
     score6 = ntp.prove(str2atom("grandFatherOf(homer,abe)"),2)
+    print(ntp.similarity_table.to_string())
     similarity = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("fatherOf(abe,cart)")], ProofState([set()], [1]))
     similarity2 = ntp.batch_unify([str2atom("q(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))
     similarity3 = ntp.batch_unify([str2atom("p(abe,cart)")], [str2atom("parentOf(abe,cart)")], ProofState([set()], [1]))

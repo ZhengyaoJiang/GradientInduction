@@ -79,12 +79,12 @@ def start_NTP(task, name=None):
     tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)")])
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("p(X,Y):-s(X,Z),s(Z,Y)")])
     final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
     similarity = ntp.batch_unify([str2atom("s(0,1)")], [str2atom("succ(0,1)")], ProofState([set()], [1]))
     return final_loss
 
 if __name__ == "__main__":
     ray.init()
-    print(ray.get([start_NTP.remote("predecessor", "p"+str(i)) for i in range(12)]))
+    print(ray.get([start_NTP.remote("predecessor", "p"+str(i)) for i in range(4)]))
     #start_NTP("predecessor", "predecessor"+"21")

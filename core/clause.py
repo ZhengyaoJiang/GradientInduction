@@ -162,7 +162,10 @@ class Clause():
 
     def __str__(self):
         body_str = ""
+        min_varible = min(self.variables)
         for term in self.body:
+            if isinstance(term,int):
+                term = term - min_varible
             body_str += str(term)
             body_str += ","
         body_str = body_str[:-1]

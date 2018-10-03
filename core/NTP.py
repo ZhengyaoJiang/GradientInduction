@@ -7,7 +7,7 @@ import copy
 from core.clause import is_variable, Clause, Atom
 
 from collections import namedtuple
-K = 5 # embedding vector length
+EMBEDDING_LENGTH = 5 # embedding vector length
 
 ProofState = namedtuple("ProofState", "substitution score")
 """
@@ -24,8 +24,11 @@ class NeuralProver():
         clause with empty body.
         """
         self.__embeddings = embeddings
-        self.__grouped_clauses = self.group_clauses(clauses)
+        self.all_symbols = embeddings.symbols
+        self.symbol_dict = {symbol:i for i,symbol in enumerate(self.all_symbols)}
+        self.__clauses = self.group_clauses(clauses)
         self.__var_manager = VariableManager()
+        self.similarities = None
 
     def group_clauses(self, clauses):
         """
@@ -34,6 +37,21 @@ class NeuralProver():
         """
         return {k: list(v) for k, v in itertools.groupby(clauses,
                 key=(lambda c: (c.head.arity, c.head.variable_positions)))}
+
+    @staticmethod
+    def get_similarities(A,B):
+        """
+        :param A: embedding matrix of first N symbols
+        :param B: embedding matrix of second M symbols
+        :return: similarity matrix with shape (N, M)
+        """
+        similarities = tf.exp(-tf.sqrt(
+            tf.matmul(tf.reduce_sum(A ** 2, axis=1, keep_dims=True),
+                      tf.ones([1, B.shape[0]]))
+            + tf.matmul(tf.ones([A.shape[0], 1]),
+                        tf.reduce_sum(B ** 2, axis=1, keep_dims=True),transpose_b=True)
+            - 2 * tf.matmul(A, B, transpose_b=True)+1e-5))
+        return similarities
 
     @staticmethod
     def from_ILP(ilp, para_clauses):
@@ -49,6 +67,8 @@ class NeuralProver():
         if isinstance(goals, Atom):
             goals = [goals]
         batch_size = len(goals)
+        all_embeddings = self.symbols2embeddinds(self.all_symbols)
+        self.similarities = self.get_similarities(all_embeddings, all_embeddings)
         initial_state = ProofState([set() for _ in range(batch_size)], tf.ones(batch_size))
         states = self.apply_rules(goals, depth, initial_state)
         scores = tf.stack([state.score for state in states if state != FAIL])
@@ -96,37 +116,27 @@ class NeuralProver():
                 del constants2[i]
         position_n = len(constants1)
         scores = tf.ones([len(heads),1])*state.score
-        if position_n>0:
-            c1 = constants1
-            c2 = constants2
-            A = self.symbols2embeddinds(c1)
-            B = self.symbols2embeddinds(c2)
+        similarities = []
+        for p in range(position_n):
+            indexes1 = [self.symbol_dict[symbol] for symbol in constants1[p]]
+            indexes2 = [self.symbol_dict[symbol] for symbol in constants2[p]]
             # tf.sqrt here cause gradient to be nan?
-            new_scroes = tf.exp(-tf.sqrt(
-                                 tf.matmul(tf.reduce_sum(A**2, axis=2, keep_dims=True),
-                                           tf.ones([position_n, 1,batch_size]))
-                               +tf.matmul(tf.ones([position_n, len(heads),1]),
-                                          tf.transpose(tf.reduce_sum(B**2, axis=2, keep_dims=True),
-                                                       [0,2,1]))
-                                 -2*tf.matmul(A,tf.transpose(B, [0,2,1]))+1e-5)
-                           )
-            new_scroes = tf.reduce_prod(new_scroes,axis=0)
-            scores = scores*new_scroes
+            similarities.append(tf.transpose(tf.gather(tf.transpose(tf.gather(self.similarities, indexes1)), indexes2)))
             if tf.reduce_max(scores) >=0.99:
                 pass
+        similarities = tf.stack(similarities)
+        new_scroes = tf.reduce_prod(similarities,axis=0)
+        scores = scores*new_scroes
         for i in range(len(heads)):
             results[i] = ProofState(substitutions[i], scores[i])
         return results
 
     def symbols2embeddinds(self,symbols):
         """
-        :param symbols: list list of symbols. [number of positions, number of symbols]
+        :param symbols: list of symbols. [number of symbols, embedding_length]
         :return:
         """
-        positions_list = []
-        for symbol_pos in symbols:
-            positions_list.append(tf.stack([self.__embeddings[symbol] for symbol in symbol_pos]))
-        return tf.stack(positions_list)
+        return tf.stack([self.__embeddings[symbol] for symbol in symbols])
 
     def apply_rules(self, goals, depth, state):
         """
@@ -140,7 +150,7 @@ class NeuralProver():
         if not isinstance(state, ProofState):
             raise ValueError()
         all_clauses = []
-        for clauses_group in self.__grouped_clauses.values():
+        for clauses_group in self.__clauses.values():
             unified_states = []
             clauses = [self.__var_manager.activate(clause) for clause in clauses_group]
             all_clauses.extend(clauses)
@@ -252,6 +262,10 @@ class Embeddings():
         return self.embbedings[key]
 
     @property
+    def symbols(self):
+        return self.embbedings.keys()
+
+    @property
     def variables(self):
         return self.embbedings.values()
 
@@ -295,7 +309,7 @@ if __name__ == "__main__":
                 str2atom("grandFatherOf(homer,cart)"), str2atom("grandFatherOf(cart,homer)")]
     embeddings = Embeddings.from_clauses(clauses, para_clauses)
     ntp = NeuralProver(clauses+para_clauses, embeddings)
-    ntp.train(positive,negative,2,3000)
+    ntp.train(positive,negative,2,1000)
     score = ntp.prove(str2atom("grandFatherOf(abe,cart)"),2)
     score2 = ntp.prove(str2atom("grandFatherOf(cart,abe)"),2)
     score3 = ntp.prove(str2atom("grandFatherOf(abe,homer)"),2)

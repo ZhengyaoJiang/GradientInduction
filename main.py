@@ -81,16 +81,20 @@ def start_NTP(task, name=None):
     tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)")])
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
+                                          str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
+                                          str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
+                                          str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
+                                          ])
     if task == "even":
         man, ilp = setup_even()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)"),
                                           str2clause("even(Y):-p(X,Y),e(X)"),
                                           str2clause("even(X):-z(X)")])
-    final_loss = ntp.train(ilp.positive,ilp.negative,10,3000)[-1]
+    final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
     return final_loss
 
 if __name__ == "__main__":
     ray.init()
-    print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
+    print(ray.get([start_NTP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")

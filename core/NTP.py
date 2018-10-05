@@ -60,6 +60,15 @@ class NeuralProver():
             - 2 * tf.matmul(A, B, transpose_b=True)+1e-5))
         return similarities
 
+    def mask_non_predicates(self, similarities, symbols):
+        mask = np.zeros_like(similarities)
+        for i,symbol in enumerate(symbols):
+            if isinstance(symbol, str):
+                mask[i,:] = 1.0
+                mask[:,i] = 1.0
+        return mask*np.eye(len(symbols), len(symbols))+(1-mask)*similarities
+
+
     @staticmethod
     def from_ILP(ilp, para_clauses):
         """
@@ -75,7 +84,8 @@ class NeuralProver():
             goals = [goals]
         batch_size = len(goals)
         all_embeddings = self.symbols2embeddinds(self.all_symbols)
-        self.similarities = self.get_similarities(all_embeddings, all_embeddings)
+        self.similarities = self.mask_non_predicates(self.get_similarities(all_embeddings, all_embeddings),
+                                                     self.all_symbols)
         initial_state = ProofState([set() for _ in range(batch_size)], tf.ones(batch_size))
         states = self.apply_rules(goals, depth, initial_state)
         scores = tf.stack([state.score for state in states if state != FAIL])
@@ -132,8 +142,8 @@ class NeuralProver():
             if tf.reduce_max(scores) >=0.99:
                 pass
         similarities = tf.stack(similarities)
-        new_scroes = tf.reduce_prod(similarities,axis=0)
-        scores = scores*new_scroes
+        new_scroes = tf.reduce_min(similarities,axis=0)
+        scores = tf.minimum(scores,new_scroes)
         for i in range(len(heads)):
             results[i] = ProofState(substitutions[i], scores[i])
         return results

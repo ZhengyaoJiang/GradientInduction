@@ -82,6 +82,10 @@ def start_NTP(task, name=None):
     if task == "predecessor":
         man, ilp = setup_predecessor()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
+                                          str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
+                                          str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
+                                          str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
+                                          str2clause("predecessor(X,Y):-s9(Y,X)")
                                           ])
     if task == "even":
         man, ilp = setup_even()

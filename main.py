@@ -85,7 +85,12 @@ def start_NTP(task, name=None):
                                           str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
                                           str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
                                           str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
-                                          str2clause("predecessor(X,Y):-s9(Y,X)")
+                                          str2clause("predecessor(X,Y):-s9(Y,X)"),
+                                          str2clause("predecessor(X,Y):-s10(Y,Z),s11(Z,X)"),
+                                          str2clause("predecessor(X,Y):-s12(X,Y),s13(Z,X)"),
+                                          str2clause("predecessor(X,Y):-s14(X,X),s15(Z,Y)"),
+                                          str2clause("predecessor(X,Y):-s16(Y,Y),s17(Z,X)"),
+                                          str2clause("predecessor(X,Y):-s18(Y,X),s19(Z,Y)"),
                                           ])
     if task == "even":
         man, ilp = setup_even()

@@ -76,7 +76,7 @@ class NeuralProver():
         :return:
         """
         background = [Clause(atom,[]) for atom in ilp.background]
-        embeddings = Embeddings.from_clauses(background, para_clauses)
+        embeddings = Embeddings.from_clauses(background, para_clauses, [ilp.language_frame.target])
         return NeuralProver(background+para_clauses, embeddings)
 
     def prove(self, goals, depth):
@@ -287,8 +287,8 @@ class Embeddings():
         return self.embbedings.values()
 
     @staticmethod
-    def from_clauses(clauses, para_clauses):
-        predicates = set()
+    def from_clauses(clauses, para_clauses, additional_predicates=set()):
+        predicates = set().union(set(additional_predicates))
         constants = set()
         para_predicates = set()
         for clause in clauses:

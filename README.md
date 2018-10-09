@@ -1,7 +1,10 @@
 # GradientInduction
-Replication of "Learning Explanatory Rules from Noisy Data" https://www.jair.org/index.php/jair/article/view/11172
-They built a differentiable first order logic deduction algorithm which can be trained with gradient based optimization,
-and thus "learning the explanatory rules".
+This project aims to build a general framework for DataLog neural program systhesis.
+
+Now, two backends are implemented:
+* ∂ILP in "Learning Explanatory Rules from Noisy Data": https://www.jair.org/index.php/jair/article/view/11172
+* NTP in "End-to-End Differentiable Proving": https://arxiv.org/abs/1705.1104
+  * note that the official implementation of NTP can be found in https://github.com/uclmr/ntp
 
 ## Dependencies
 * numpy

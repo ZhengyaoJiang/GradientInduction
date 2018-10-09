@@ -227,7 +227,7 @@ class NeuralProver():
             for weights in self.__embeddings.variables:
                 regularization += tf.nn.l2_loss(weights)*weight_decay
             loss_value += regularization/len(self.__embeddings.variables)
-        return tape.gradient(loss_value, self.__embeddings.variables)
+        return tape.gradient(loss_value, list(self.__embeddings.variables))
 
     def sample_minibatch(self, positive, negative, batch_size, ratio=0.2):
         positive_n = int(ratio*batch_size)

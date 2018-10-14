@@ -71,7 +71,7 @@ def start_DILP(task, name):
         man, ilp = setup_predecessor()
     if task == "even":
         man, ilp = setup_even()
-    agent = Agent(man, ilp)
+    agent = SupervisedDILP(man, ilp)
     return agent.train(name=name)[-1]
 
 @ray.remote
@@ -97,5 +97,5 @@ def start_NTP(task, name=None):
 
 if __name__ == "__main__":
     ray.init()
-    print(ray.get([start_NTP.remote("predecessor", "e"+str(i)) for i in range(12)]))
+    print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")

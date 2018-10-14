@@ -9,16 +9,13 @@ from core.rules import RulesManager
 from core.clause import Predicate
 from pprint import pprint
 
-
-class Agent(object):
-    def __init__(self, rules_manager, ilp):
+class BaseDILP(object):
+    def __init__(self, rules_manager, background):
         self.rules_manager = rules_manager
         self.rule_weights = OrderedDict() # dictionary from predicates to rule weights matrices
         self.__init__rule_weights()
         self.ground_atoms = rules_manager.all_grounds
-        self.base_valuation = self.axioms2valuation(ilp.background)
-        self.training_data = OrderedDict() # index to label
-        self.__init_training_data(ilp.positive, ilp.negative)
+        self.base_valuation = self.axioms2valuation(background)
 
     def __init__rule_weights(self):
         with tf.variable_scope("rule_weights", reuse=tf.AUTO_REUSE):
@@ -40,14 +37,6 @@ class Agent(object):
                 print(str(clauses[0][indexes[0][i]]))
                 print(str(clauses[1][indexes[1][i]]))
                 print("\n")
-
-    def __init_training_data(self, positive, negative):
-        for i, atom in enumerate(self.ground_atoms):
-            if atom in positive:
-                self.training_data[i] = 1.0
-            elif atom in negative:
-                self.training_data[i] = 0.0
-
 
     def axioms2valuation(self, axioms):
         '''
@@ -78,7 +67,7 @@ class Agent(object):
         deduced_valuation = tf.zeros(len(self.ground_atoms))
         # deduction_matrices = self.rules_manager.deducation_matrices[predicate]
         for predicate, matrix in self.rules_manager.deduction_matrices.items():
-            deduced_valuation += Agent.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
+            deduced_valuation += BaseDILP.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
         return deduced_valuation+valuation - deduced_valuation*valuation
 
     @staticmethod
@@ -93,7 +82,7 @@ class Agent(object):
         result_valuations = [[], []]
         for i in range(len(result_valuations)):
             for matrix in deduction_matrices[i]:
-                result_valuations[i].append(Agent.inference_single_clause(valuation, matrix))
+                result_valuations[i].append(BaseDILP.inference_single_clause(valuation, matrix))
 
         c_p = [] # flattened
         for clause1 in result_valuations[0]:
@@ -117,6 +106,19 @@ class Agent(object):
         Y2 = tf.gather_nd(params=valuation, indices=X2)
         Z = Y1*Y2
         return tf.reduce_max(Z, axis=1)
+
+class SupervisedDILP(BaseDILP):
+    def __init__(self, rules_manager, ilp):
+        super(SupervisedDILP, self).__init__(rules_manager, ilp.background)
+        self.training_data = OrderedDict() # index to label
+        self.__init_training_data(ilp.positive, ilp.negative)
+
+    def __init_training_data(self, positive, negative):
+        for i, atom in enumerate(self.ground_atoms):
+            if atom in positive:
+                self.training_data[i] = 1.0
+            elif atom in negative:
+                self.training_data[i] = 0.0
 
     def loss(self, batch_size=-1):
         labels = np.array(self.training_data.values(), dtype=np.float32)
@@ -184,5 +186,5 @@ class Agent(object):
 #def prob_sum(x, y):
 #    return x + y - x*y
 
-class RLAgent(Agent):
+class RLAgent(BaseDILP):
     pass

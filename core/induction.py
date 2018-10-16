@@ -49,10 +49,10 @@ class BaseDILP(object):
                 result[i] = 1.0
         return result
 
-    def valuation2atoms(self, valuation):
+    def valuation2atoms(self, valuation, threshold=0.3):
         result = {}
         for i, value in enumerate(valuation):
-            if value > 0.01:
+            if value > threshold:
                 result[self.ground_atoms[i]] = float(value)
         return result
 
@@ -182,9 +182,54 @@ class SupervisedDILP(BaseDILP):
             print("-"*20+"\n")
         return losses
 
+class ReinforceDILP(BaseDILP):
+    def __init__(self, rules_manager, enviornment):
+        super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
+        self.env = enviornment
 
-#def prob_sum(x, y):
-#    return x + y - x*y
+    def valuation2action_prob(self, valuation, state):
+        """
+        :param valuation:
+        :param state: tuple of terms
+        :return:
+        """
+        atoms = self.valuation2atoms(valuation, 0) #ordered
+        actions = tf.zeros_like(self.env.actions)
+        for i,atom in enumerate(atoms):
+            if state == atom.terms and atom.predicate in self.env.actions:
+                actions[self.env.actions.index(atom.predicate)] = valuation[i]
+        return actions
 
-class RLAgent(BaseDILP):
-    pass
+    def sample_episode(self):
+        valuation = self.deduction()
+        action_prob_history = []
+        action_history = []
+        reward_history = []
+        action_trajectory_prob = []
+        while True:
+            action_prob = self.valuation2action_prob(valuation, self.env.state)
+            action_index = np.random.choice(range(len(self.env.actions)), p=action_prob)
+            reward, finished = self.env.step(self.env.action_index2symbol(action_index))
+            reward_history.append(reward)
+            action_history.append(action_index)
+            action_prob_history.append(action_prob)
+            action_trajectory_prob.append(action_prob[action_index])
+            if finished:
+                self.env.reset()
+                break
+        return reward_history, action_history, action_prob_history, action_trajectory_prob
+
+
+    def loss(self, discounting=0.95):
+        #TODO: enable discounting here
+        reward_history, _, _, action_trajectory_prob = self.sample_episode()
+        reward_history = tf.stack(reward_history)
+        action_trajectory_prob = tf.stack(action_trajectory_prob)
+        returns = tf.cumsum(reward_history, reverse=True)
+        return -tf.log(action_trajectory_prob)*returns
+
+
+
+
+def prob_sum(x, y):
+    return x + y - x*y

@@ -6,6 +6,7 @@ from core.rules import *
 from core.induction import *
 from core.clause import str2atom,str2clause
 from core.NTP import NeuralProver
+from core.symbolicEnvironment import *
 
 def setup_predecessor():
     constants = [str(i) for i in range(10)]
@@ -63,22 +64,34 @@ def setup_even():
     man = RulesManager(language, program_temp)
     return man, ilp
 
-@ray.remote
+def setup_cliffwalking():
+    env = CliffWalking()
+    temp = [RuleTemplate(1, False)]
+    program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 1)
+    man = RulesManager(env.language, program_temp)
+    return man, env
+
+
+#@ray.remote
 def start_DILP(task, name):
     import tensorflow as tf
-    tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
-    if task == "even":
+        agent = SupervisedDILP(man, ilp)
+    elif task == "even":
         man, ilp = setup_even()
-    agent = SupervisedDILP(man, ilp)
-    return agent.train(name=name)[-1]
+        agent = SupervisedDILP(man, ilp)
+    elif task == "cliffwalking":
+        man, env = setup_cliffwalking()
+        agent = ReinforceDILP(man, env)
+    else:
+        raise ValueError()
+    return agent.train(steps=6000, name=name)[-1]
 
 @ray.remote
 def start_NTP(task, name=None):
     import tensorflow as tf
     from core.NTP import ProofState
-    tf.enable_eager_execution()
     if task == "predecessor":
         man, ilp = setup_predecessor()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
@@ -96,6 +109,9 @@ def start_NTP(task, name=None):
     return final_loss
 
 if __name__ == "__main__":
-    ray.init()
-    print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
+    #ray.init()
+    #print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")
+    tf.enable_eager_execution()
+    with tf.device("cpu"):
+        start_DILP("cliffwalking", "cliff5_fix_softmaxbug")

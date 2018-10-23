@@ -64,10 +64,15 @@ def setup_even():
     man = RulesManager(language, program_temp)
     return man, ilp
 
-def setup_cliffwalking():
+def setup_cliffwalking(invented=False):
     env = CliffWalking()
-    temp = [RuleTemplate(1, False)]
-    program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 1)
+    if invented:
+        temp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+        invented = Predicate("invented", 2)
+        program_temp = ProgramTemplate([invented], {invented:temp, UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 2)
+    else:
+        temp = [RuleTemplate(1, False)]
+        program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 2)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -77,16 +82,32 @@ def start_DILP(task, name):
     import tensorflow as tf
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        agent = SupervisedDILP(man, ilp)
+        learner = SupervisedDILP(man, ilp)
+        learning_rate = 0.5
     elif task == "even":
         man, ilp = setup_even()
-        agent = SupervisedDILP(man, ilp)
+        learner = SupervisedDILP(man, ilp)
+        learning_rate = 0.5
     elif task == "cliffwalking":
         man, env = setup_cliffwalking()
-        agent = ReinforceDILP(man, env)
+        agent = RLDILP(man, env)
+        # critic = NeuralCritic([10,10], len(env.state))
+        # learner = PPOLearner(agent, env, critic)
+        learner = ReinforceLearner(agent, env)
+        learning_rate = 0.5
     else:
         raise ValueError()
-    return agent.train(steps=6000, name=name)[-1]
+    return learner.train(steps=6000, name=name, learning_rate=learning_rate)[-1]
+
+def start_NN(task, name=None):
+    if task == "cliffwalking":
+        man, env = setup_cliffwalking()
+        agent = NeuralAgent([20,10], len(env.actions), len(env.state))
+        # critic = NeuralCritic([10,10], len(env.state))
+        critic = None
+        #learner = PPOLearner(agent, env, critic=critic)
+        learner = ReinforceLearner(agent, env)
+    return learner.train(steps=6000, name=name, learning_rate=1e-10)[-1]
 
 @ray.remote
 def start_NTP(task, name=None):
@@ -114,4 +135,5 @@ if __name__ == "__main__":
     #start_NTP("predecessor", "predecessor"+"21")
     tf.enable_eager_execution()
     with tf.device("cpu"):
-        start_DILP("cliffwalking", "cliff5_fix_softmaxbug")
+        start_NN("cliffwalking", "removecliff")
+        #start_DILP("predecessor", None)

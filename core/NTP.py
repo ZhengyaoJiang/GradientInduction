@@ -4,6 +4,7 @@ import itertools
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 import copy
+from numba import jit
 import pandas as pd
 from core.clause import is_variable, Clause, Atom, Predicate
 
@@ -12,11 +13,22 @@ EMBEDDING_LENGTH = 5 # embedding vector length
 
 ProofState = namedtuple("ProofState", "substitution score")
 """
-substitution is list to set of binary tuples, where the first element is the
- variable and second one is a list of constant be replaced.
+substitution is list of dictionaries.
 score is a vector (Tensor) representing the sucessness scores of the proof.
 """
 FAIL = ProofState(None, 0)
+
+def substitute(atom, substitutions):
+    """
+    substitute variables in an atom given the list of substitution pairs
+    :param atom:
+    :param substitution: list of binary tuples
+    :return:
+    """
+    results = []
+    for substitution in substitutions:
+        results.append(atom.replace(substitution))
+    return results
 
 class NeuralProver(object):
     def __init__(self, clauses, embeddings):
@@ -88,7 +100,7 @@ class NeuralProver(object):
             goals = [goals]
         batch_size = len(goals)
         self.update_similarity()
-        initial_state = ProofState([set() for _ in range(batch_size)], tf.ones(batch_size))
+        initial_state = ProofState([{} for _ in range(batch_size)], tf.ones(batch_size))
         states = self.apply_rules(goals, depth, initial_state)
         scores = tf.stack([state.score for state in states if state != FAIL])
         return tf.reduce_max(scores, axis=0)
@@ -101,7 +113,8 @@ class NeuralProver(object):
         :return: result proof states with substituted variables and new scores(ordered)
         """
         results = [None for _ in range(len(heads))]
-        substitutions = [copy.deepcopy(state.substitution) for _ in heads]
+        substitution = [copy.copy(dictionary) for dictionary in state.substitution]
+        substitutions = [substitution for _ in heads]
         batch_size = len(atoms)
         constants1 = [[] for _ in range(atoms[0].arity+1)]
         constants2 = [[] for _ in range(atoms[0].arity+1)]
@@ -121,9 +134,9 @@ class NeuralProver(object):
                     if is_variable(symbol1) and is_variable(symbol2):
                         pass
                     elif is_variable(symbol1):
-                        substitutions[i][j].add((symbol1, symbol2))
+                        substitutions[i][j][symbol1] = symbol2
                     elif is_variable(symbol2):
-                        substitutions[i][j].add((symbol2, symbol1))
+                        substitutions[i][j][symbol2] = symbol1
                     else:
                         if j==0:
                             constants1[k].append(symbol1)
@@ -178,19 +191,7 @@ class NeuralProver(object):
                 states.extend(self.apply_rule(c.body, depth, s))
         return states
 
-    @staticmethod
-    def substitute(atom, substitutions):
-        """
-        substitute variables in an atom given the list of substitution pairs
-        :param atom:
-        :param substitution: list of binary tuples
-        :return:
-        """
-        results = []
-        for substitution in substitutions:
-            replace_dict = {pair[0]: pair[1] for pair in substitution}
-            results.append(atom.replace(replace_dict))
-        return results
+
 
     def apply_rule(self, body, depth, state):
         """
@@ -210,7 +211,7 @@ class NeuralProver(object):
         if len(body)==0:
             return [state]
         states = []
-        or_states = self.apply_rules(NeuralProver.substitute(body[0], state.substitution),
+        or_states = self.apply_rules(substitute(body[0], state.substitution),
                                      depth-1, state)
         for or_state in or_states:
             states.extend(self.apply_rule(body[1:],depth,or_state))
@@ -291,7 +292,7 @@ class EfficientNeuralProver(NeuralProver):
         :return: result proof states with substituted variables and new scores(ordered)
         """
         results = [None for _ in range(len(heads))]
-        substitutions = [copy.deepcopy(state.substitution) for _ in heads]
+        substitutions = [copy.copy(state.substitution) for _ in heads]
         batch_size = len(atoms)
         constants1 = [[] for _ in range(atoms[0].arity+1)]
         constants2 = [[] for _ in range(atoms[0].arity+1)]

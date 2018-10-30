@@ -1,12 +1,12 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
+from numba import jit
 from collections import namedtuple
 
 Predicate = namedtuple("Predicate", "name arity")
 
-
 def is_variable(term):
-    return True if isinstance(term, int) else False
+    return isinstance(term, int)
 
 def var_string(atom):
     '''

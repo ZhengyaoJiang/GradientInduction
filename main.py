@@ -115,13 +115,13 @@ def start_NTP(task, name=None):
     from core.NTP import ProofState
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = EfficientNeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
+        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
                                           str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
                                           str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
                                           str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
                                           str2clause("predecessor(X,Y):-s9(Y,X)")
                                           ])
-        final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
+        final_loss = ntp.train(ilp.positive,ilp.negative,2,5)[-1]
     if task == "even":
         man, ilp = setup_even()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)"),

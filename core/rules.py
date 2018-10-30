@@ -136,7 +136,7 @@ class RulesManager():
 
         def not_duplicated(clause):
             for pruned_caluse in pruned:
-                if reversed(pruned_caluse.body) == clause.body:
+                if tuple(reversed(pruned_caluse.body)) == clause.body:
                     return False
             return True
 

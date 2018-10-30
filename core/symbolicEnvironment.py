@@ -30,13 +30,13 @@ WIDTH = 5
 class CliffWalking(SymbolicEnvironment):
     def __init__(self):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, GOAL, CLIFF],
+        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC],
                                       constants=[str(i) for i in range(WIDTH)])
         background = []
         self.unseen_background = []
-        #self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
-        #self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
-        background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
+        self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
+        self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
+        #background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
                            for j in range(0, WIDTH) if i<j])

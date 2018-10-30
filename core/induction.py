@@ -271,6 +271,8 @@ class ReinforceLearner(object):
             model_parameters.update(self.agent.get_str2weights())
         elif isinstance(self.agent, NeuralAgent):
             model_parameters["actor"] = self.agent.model
+        else:
+            raise NotImplementedError("checkpoint of NTP not implemented")
         root = tf.train.Checkpoint(optimizer=optimizer,
                                    optimizer_step=tf.train.get_or_create_global_step(),
                                    **model_parameters)
@@ -289,9 +291,11 @@ class ReinforceLearner(object):
         while True:
             if isinstance(self.agent, RLDILP):
                 action_prob, excess = self.agent.valuation2action_prob(valuation, self.env.state)
-            else:
+            elif isinstance(self.agent, NeuralAgent):
                 action_prob = self.agent.deduction(self.env.state)
                 excess = 0
+            else:
+                action_prob, excess = self.agent.policy(self.env.state)
             excesses.append(excess)
             action_index = np.random.choice(range(len(self.env.actions)), p=action_prob.numpy())
             action = self.env.action_index2symbol(action_index)
@@ -309,17 +313,25 @@ class ReinforceLearner(object):
     def loss(self, selected_action_prob, returns, additional_discount):
         return -tf.log(tf.clip_by_value(selected_action_prob, 1e-5, 1.0))*returns*additional_discount
 
+    def summary_scalar(self, name, scalar):
+        if self.summary_writer:
+            with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
+                tf.contrib.summary.scalar(name, scalar)
+
     def train(self, steps=300, name=None, discounting=1.0, batched=True, learning_rate=0.5):
         losses = []
         optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-
-        checkpoint_dir = "./model/" + name
-        checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
-        checkpoint = self.create_checkpoint(optimizer)
-        try:
-            checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
-        except Exception as e:
-            print(e)
+        if name:
+            checkpoint_dir = "./model/" + name
+            checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+            checkpoint = self.create_checkpoint(optimizer)
+            try:
+                checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+            except Exception as e:
+                print(e)
+            self.summary_writer = tf.contrib.summary.create_file_writer("./model/" + name, flush_millis=10000)
+        else:
+            self.summary_writer = None
 
         for i in range(steps):
             if batched:
@@ -351,6 +363,8 @@ class ReinforceLearner(object):
                     grads = tape.gradient(loss_value, self.agent.all_variables())
                     optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
                                           global_step=tf.train.get_or_create_global_step())
+            self.summary_scalar("return", returns[0])
+
             print("-"*20)
             print("step "+str(i)+"return is "+str(log["return"]))
             if i%5==0:
@@ -427,12 +441,6 @@ class PPOLearner(ReinforceLearner):
             current_value.append(values)
             future_value.append(future_v)
         return tf.concat(current_value, axis=0), np.concatenate(future_value)
-
-    def summary_scalar(self, name, scalar):
-        if self.summary_writer:
-            with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
-                tf.contrib.summary.scalar(name, scalar)
-
 
     def train(self, steps=300, name=None, learning_rate=0.5, critic_ratio=0.003):
         losses = []
@@ -514,12 +522,13 @@ class NeuralAgent(object):
         self.unit_list = unit_list
         self.action_size = action_size
         model = tf.keras.Sequential()
-        model.add(tf.keras.layers.Dense(unit_list[0], input_shape=(state_size,), activation=tf.nn.relu,
+        model.add(tf.keras.layers.Dense(unit_list[0], input_shape=(state_size,), activation=tf.nn.sigmoid,
                                         kernel_initializer=tf.initializers.random_normal()))
         for i in range(1, len(unit_list)):
-            model.add(tf.keras.layers.Dense(unit_list[i], activation=tf.nn.relu,
+            model.add(tf.keras.layers.Dense(unit_list[i], activation=tf.nn.sigmoid,
                                             kernel_initializer=tf.initializers.random_normal()))
-        model.add(tf.keras.layers.Dense(action_size, activation=tf.nn.softmax))
+        model.add(tf.keras.layers.Dense(action_size, activation=tf.nn.softmax,
+                                        ))
         self.model=model
 
     def deduction(self, state):
@@ -545,7 +554,7 @@ class NeuralCritic(object):
         for i in range(1, len(unit_list)):
             model.add(tf.keras.layers.Dense(unit_list[i], kernel_initializer=tf.initializers.random_normal(),
                                             activation=tf.nn.relu))
-        model.add(tf.keras.layers.Dense(1))
+        model.add(tf.keras.layers.Dense(1, kernel_initializer=tf.initializers.random_normal()))
         self.model=model
 
     def predict(self, state):

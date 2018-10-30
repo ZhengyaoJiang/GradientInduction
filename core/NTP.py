@@ -5,7 +5,7 @@ import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 import copy
 import pandas as pd
-from core.clause import is_variable, Clause, Atom
+from core.clause import is_variable, Clause, Atom, Predicate
 
 from collections import namedtuple
 EMBEDDING_LENGTH = 5 # embedding vector length
@@ -18,7 +18,7 @@ score is a vector (Tensor) representing the sucessness scores of the proof.
 """
 FAIL = ProofState(None, 0)
 
-class NeuralProver():
+class NeuralProver(object):
     def __init__(self, clauses, embeddings):
         """
         :param clauses: all clauses, including facts! facts are represented as a
@@ -68,7 +68,6 @@ class NeuralProver():
                 mask[:,i] = 1.0
         return mask*np.eye(len(symbols), len(symbols))+(1-mask)*similarities
 
-
     @staticmethod
     def from_ILP(ilp, para_clauses):
         """
@@ -79,13 +78,16 @@ class NeuralProver():
         embeddings = Embeddings.from_clauses(background, para_clauses)
         return NeuralProver(background+para_clauses, embeddings)
 
+    def update_similarity(self):
+        all_embeddings = self.symbols2embeddinds(self.all_symbols)
+        self.similarities = self.mask_non_predicates(self.get_similarities(all_embeddings, all_embeddings),
+                                                     self.all_symbols)
+
     def prove(self, goals, depth):
         if isinstance(goals, Atom):
             goals = [goals]
         batch_size = len(goals)
-        all_embeddings = self.symbols2embeddinds(self.all_symbols)
-        self.similarities = self.mask_non_predicates(self.get_similarities(all_embeddings, all_embeddings),
-                                                     self.all_symbols)
+        self.update_similarity()
         initial_state = ProofState([set() for _ in range(batch_size)], tf.ones(batch_size))
         states = self.apply_rules(goals, depth, initial_state)
         scores = tf.stack([state.score for state in states if state != FAIL])
@@ -251,6 +253,154 @@ class NeuralProver():
             print("step "+str(i)+" loss is "+str(loss_avg))
         return losses
 
+    def all_variables(self):
+        return self.__embeddings.variables
+
+    def log(self):
+        print(self.similarity_table)
+
+# let similarities as variable
+class EfficientNeuralProver(NeuralProver):
+    def __init__(self, clauses, embeddings):
+        """
+        :param clauses: all clauses, including facts! facts are represented as a
+        clause with empty body.
+        """
+        super(EfficientNeuralProver, self).__init__(clauses, embeddings)
+        self.para_predicates = self.__embeddings.para_predicates
+        self.all_predicates = self.__embeddings.predicates.union(self.para_predicates)
+        self.__init_variables()
+
+    def __init_variables(self):
+        all_predicates = list(self.all_predicates)
+        self.similarity_parameters = tf.get_variable("predicates_parameter", shape=[len(self.para_predicates),
+                                                                                    len(self.all_predicates)],
+                                                      initializer=tf.random_normal_initializer)
+        self.predicate_dict = {symbol:i for i,symbol in enumerate(all_predicates)}
+
+
+    def update_similarity(self):
+        self.similarities = tf.nn.softmax(self.similarity_parameters, axis=0)
+
+
+    def batch_unify(self, heads, atoms, state):
+        """
+        :param heads: clause heads with the same structure
+        :param atoms: atoms, which all has the same structures and arities
+        :param state:
+        :return: result proof states with substituted variables and new scores(ordered)
+        """
+        results = [None for _ in range(len(heads))]
+        substitutions = [copy.deepcopy(state.substitution) for _ in heads]
+        batch_size = len(atoms)
+        constants1 = [[] for _ in range(atoms[0].arity+1)]
+        constants2 = [[] for _ in range(atoms[0].arity+1)]
+        if heads[0].arity != atoms[0].arity:
+            return [FAIL for _ in heads]
+
+        for i,head in enumerate(heads):
+            for j in range(batch_size):
+                atom = atoms[j]
+                for k in range(atom.arity+1):
+                    if k==0:
+                        symbol1 = head.predicate
+                        symbol2 = atom.predicate
+                    else:
+                        symbol1 = head.terms[k - 1]
+                        symbol2 = atom.terms[k - 1]
+                    if is_variable(symbol1) and is_variable(symbol2):
+                        pass
+                    elif is_variable(symbol1):
+                        substitutions[i][j].add((symbol1, symbol2))
+                    elif is_variable(symbol2):
+                        substitutions[i][j].add((symbol2, symbol1))
+                    else:
+                        if j==0:
+                            constants1[k].append(symbol1)
+                        if i==0:
+                            constants2[k].append(symbol2)
+        for i in reversed(range(len(constants1))):
+            if not constants1[i] or not constants2[i]:
+                del constants1[i]
+                del constants2[i]
+        position_n = len(constants1)
+        scores = tf.ones([len(heads),1])*state.score
+        similarities = []
+        for p in range(position_n):
+            indexes1 = [self.symbol_dict[symbol] for symbol in constants1[p]]
+            indexes2 = [self.symbol_dict[symbol] for symbol in constants2[p]]
+            # tf.sqrt here cause gradient to be nan?
+            similarities.append(self.similarity_lookup(indexes1, indexes2))
+            if tf.reduce_max(scores) >=0.99:
+                pass
+        similarities = tf.stack(similarities)
+        new_scroes = tf.reduce_min(similarities,axis=0)
+        scores = tf.minimum(scores,new_scroes)
+        for i in range(len(heads)):
+            results[i] = ProofState(substitutions[i], scores[i])
+        return results
+
+    def similarity_lookup(self, indexes1, indexes2):
+        similarity = []
+        for index1 in indexes1:
+            sim_list = []
+            for index2 in indexes2:
+                if isinstance(self.all_symbols[index1], str):
+                    if index1 == index2:
+                        sim_list.append(1.0)
+                    else:
+                        sim_list.append(0.0)
+                elif self.all_symbols[index1] in self.para_predicates:
+                    predicate1 = self.predicate_dict[self.all_symbols[index1]]
+                    predicate2 = self.predicate_dict[self.all_symbols[index2]]
+                    sim_list.append(self.similarities[predicate1, predicate2])
+                elif self.all_symbols[index2] in self.para_predicates:
+                    predicate1 = self.predicate_dict[self.all_symbols[index1]]
+                    predicate2 = self.predicate_dict[self.all_symbols[index2]]
+                    sim_list.append(self.similarities[predicate2, predicate1])
+                else:
+                    if index1 == index2:
+                        sim_list.append(1.0)
+                    else:
+                        sim_list.append(0.0)
+            similarity.append(tf.stack(sim_list))
+        return similarity
+
+
+
+class RLProver(NeuralProver):
+    def __init__(self, clauses, embeddings, depth, env):
+        """
+        :param clauses:
+        :param embeddings:
+        :param actions: action predicates
+        """
+        super(RLProver, self).__init__(clauses,embeddings)
+        self.actions = env.actions
+        self.depth = depth
+        self.env = env
+
+
+    @staticmethod
+    def from_Env(env, para_clauses, depth):
+        """
+        construct a NTP from a RL enviorment
+        :return:
+        """
+        background = [Clause(atom,[]) for atom in env.background]
+        embeddings = Embeddings.from_clauses(background, para_clauses, env.actions)
+        return RLProver(background+para_clauses, embeddings, depth, env)
+
+    def policy(self, state):
+        goals = [Atom(action, state) for action in self.actions]
+        action_eval = self.prove(goals, self.depth)
+        sum_action_eval = tf.reduce_sum(action_eval)
+        if sum_action_eval > 1.0:
+            action_prob = action_eval / sum_action_eval
+        else:
+            action_prob = action_eval + (1.0 - sum_action_eval) / len(self.env.actions)
+        return action_prob, sum_action_eval - 1.0
+
 
 
 class VariableManager():
@@ -287,7 +437,7 @@ class Embeddings():
         return self.embbedings.values()
 
     @staticmethod
-    def from_clauses(clauses, para_clauses):
+    def from_clauses(clauses, para_clauses, target_predicates=set()):
         predicates = set()
         constants = set()
         para_predicates = set()
@@ -300,6 +450,7 @@ class Embeddings():
                 raise ValueError("parameterized clause shouldn't include the constants that didn't appear"
                                  "in main clauses")
             para_predicates.update(para_clause.predicates)
+        predicates.update(target_predicates)
         return Embeddings(predicates, para_predicates, constants)
 
 if __name__ == "__main__":

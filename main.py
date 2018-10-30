@@ -5,7 +5,7 @@ import ray
 from core.rules import *
 from core.induction import *
 from core.clause import str2atom,str2clause
-from core.NTP import NeuralProver
+from core.NTP import NeuralProver, RLProver, EfficientNeuralProver
 from core.symbolicEnvironment import *
 
 def setup_predecessor():
@@ -71,8 +71,8 @@ def setup_cliffwalking(invented=False):
         invented = Predicate("invented", 2)
         program_temp = ProgramTemplate([invented], {invented:temp, UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 2)
     else:
-        temp = [RuleTemplate(1, False)]
-        program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 2)
+        temp = [RuleTemplate(2, False)]
+        program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 1)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -94,7 +94,7 @@ def start_DILP(task, name):
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
         learner = ReinforceLearner(agent, env)
-        learning_rate = 0.5
+        learning_rate = 0.1
     else:
         raise ValueError()
     return learner.train(steps=6000, name=name, learning_rate=learning_rate)[-1]
@@ -107,26 +107,41 @@ def start_NN(task, name=None):
         critic = None
         #learner = PPOLearner(agent, env, critic=critic)
         learner = ReinforceLearner(agent, env)
-    return learner.train(steps=6000, name=name, learning_rate=1e-10)[-1]
+    return learner.train(steps=6000, name=name, learning_rate=1e-3)[-1]
 
-@ray.remote
+#@ray.remote
 def start_NTP(task, name=None):
     import tensorflow as tf
     from core.NTP import ProofState
     if task == "predecessor":
         man, ilp = setup_predecessor()
-        ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
+        ntp = EfficientNeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
                                           str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
                                           str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
                                           str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
                                           str2clause("predecessor(X,Y):-s9(Y,X)")
                                           ])
+        final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
     if task == "even":
         man, ilp = setup_even()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)"),
                                           str2clause("even(Y):-p(X,Y),e(X)"),
                                           str2clause("even(X):-z(X)")])
-    final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
+        final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
+    if task == "cliffwalking":
+        man, env = setup_cliffwalking()
+        agent = RLProver.from_Env(env,
+                                  [str2clause("a1(X,Y):-s1(X,Z),s2(Z,Y)"),
+                                   str2clause("a2(X,Y):-s3(X,Y),s4(X,Y)"),
+                                   str2clause("a5(X,Y):-s9(Y,X)"),
+                                   str2clause("a6(X,Y):-s10(X,Y),s11(Y,Z)"),
+                                   str2clause("a7(X,Y):-s12(X,Y),s13(X,Z)"),
+                                   str2clause("a8(X,Y):-s14(Y,Z),s15(X,Z)"),
+                                   str2clause("a9(X,Y):-s16(Y,Z),s17(Y,Z)"),
+                                   ]
+                                  ,2)
+        learner = ReinforceLearner(agent, env)
+        final_loss = learner.train(steps=500, name=name, learning_rate=0.001)
     return final_loss
 
 if __name__ == "__main__":
@@ -135,5 +150,6 @@ if __name__ == "__main__":
     #start_NTP("predecessor", "predecessor"+"21")
     tf.enable_eager_execution()
     with tf.device("cpu"):
-        start_NN("cliffwalking", "removecliff")
+        #start_DILP("cliffwalking", "102000")
         #start_DILP("predecessor", None)
+        start_NTP("predecessor", None)

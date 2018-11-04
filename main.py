@@ -5,7 +5,7 @@ import ray
 from core.rules import *
 from core.induction import *
 from core.clause import str2atom,str2clause
-from core.NTP import NeuralProver, RLProver, EfficientNeuralProver
+from core.NTP import NeuralProver, RLProver, SymbolicNeuralProver
 from core.symbolicEnvironment import *
 
 def setup_predecessor():
@@ -116,12 +116,12 @@ def start_NTP(task, name=None):
     if task == "predecessor":
         man, ilp = setup_predecessor()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s1(X,Z),s2(Z,Y)"),
-                                          str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
-                                          str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
-                                          str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
-                                          str2clause("predecessor(X,Y):-s9(Y,X)")
-                                          ])
-        final_loss = ntp.train(ilp.positive,ilp.negative,2,5)[-1]
+                                                  str2clause("predecessor(X,Y):-s3(X,X),s4(X,Y)"),
+                                                  str2clause("predecessor(X,Y):-s5(X,X),s6(Y,Y)"),
+                                                  str2clause("predecessor(X,Y):-s7(X,Y),s8(Y,Y)"),
+                                                  str2clause("predecessor(X,Y):-s9(Y,X)")
+                                                  ])
+        final_loss = ntp.train(ilp.positive,ilp.negative,2,3000)[-1]
     if task == "even":
         man, ilp = setup_even()
         ntp = NeuralProver.from_ILP(ilp, [str2clause("predecessor(X,Y):-s(X,Z),s2(Z,Y)"),
@@ -131,17 +131,21 @@ def start_NTP(task, name=None):
     if task == "cliffwalking":
         man, env = setup_cliffwalking()
         agent = RLProver.from_Env(env,
-                                  [str2clause("a1(X,Y):-s1(X,Z),s2(Z,Y)"),
-                                   str2clause("a2(X,Y):-s3(X,Y),s4(X,Y)"),
-                                   str2clause("a5(X,Y):-s9(Y,X)"),
-                                   str2clause("a6(X,Y):-s10(X,Y),s11(Y,Z)"),
-                                   str2clause("a7(X,Y):-s12(X,Y),s13(X,Z)"),
-                                   str2clause("a8(X,Y):-s14(Y,Z),s15(X,Z)"),
-                                   str2clause("a9(X,Y):-s16(Y,Z),s17(Y,Z)"),
+                                  [
+                                   str2clause("a1(X,Y):-s1(X)"),
+                                   str2clause("a2(X,Y):-s2(Y)"),
+                                   str2clause("a3(X,Y):-s3(Z,X)"),
+                                   str2clause("a4(X,Y):-s4(Z,Y)"),
+                                   str2clause("a5(X,Y):-s5(X,Z)"),
+                                   str2clause("a6(X,Y):-s6(Y,Z)"),
+                                   str2clause("a7(X,Y):-s7(X,Y),s8(X,Z)"),
+                                   str2clause("a8(X,Y):-s9(Y,Z),s10(X,Z)"),
+                                   str2clause("a9(X,Y):-s11(Y,X),s12(Z,Y)"),
+                                   str2clause("a10(X,Y):-s13(X,Y),s14(Z,Y)"),
                                    ]
                                   ,2)
         learner = ReinforceLearner(agent, env)
-        final_loss = learner.train(steps=500, name=name, learning_rate=0.001)
+        final_loss = learner.train(steps=2000, name=name, learning_rate=0.001, optimizer="Adam")
     return final_loss
 
 if __name__ == "__main__":
@@ -152,4 +156,5 @@ if __name__ == "__main__":
     with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
         #start_DILP("predecessor", None)
-        start_NTP("predecessor", None)
+        start_NTP("cliffwalking", "NTPRL08")
+        #start_NTP("predecessor", None)

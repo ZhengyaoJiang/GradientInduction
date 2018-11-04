@@ -27,7 +27,7 @@ def substitute(atom, substitutions):
     """
     results = []
     for substitution in substitutions:
-        results.append(atom.replace(substitution))
+        results.append(atom.replace_terms(substitution))
     return results
 
 class NeuralProver(object):
@@ -36,12 +36,16 @@ class NeuralProver(object):
         :param clauses: all clauses, including facts! facts are represented as a
         clause with empty body.
         """
-        self.__embeddings = embeddings
+        self._embeddings = embeddings
         self.all_symbols = embeddings.symbols
         self.symbol_dict = {symbol:i for i,symbol in enumerate(self.all_symbols)}
         self.__clauses = self.group_clauses(clauses)
         self.__var_manager = VariableManager()
         self.similarities = None
+        self.para_clauses = []
+        for clause in clauses:
+            if clause.predicates & self._embeddings.para_predicates:
+                self.para_clauses.append(clause)
 
     def group_clauses(self, clauses):
         """
@@ -71,6 +75,27 @@ class NeuralProver(object):
                         tf.reduce_sum(B ** 2, axis=1, keep_dims=True),transpose_b=True)
             - 2 * tf.matmul(A, B, transpose_b=True)+1e-5))
         return similarities
+
+    def get_rules(self):
+        df = self.similarity_table
+        rules = []
+        for clause in self.para_clauses:
+            replace_dict = {}
+            confidence = 1.0
+            for predicate in clause.predicates:
+                if predicate not in self._embeddings.para_predicates:
+                    continue
+                else:
+                    top2 = df.loc[predicate].sort_values(ascending=False).head(2)
+                    # omit the similarity of itself
+                    score = top2[1]
+                    if top2.index[1].arity != predicate.arity:
+                        score = 0.0
+                    else:
+                        replace_dict[predicate] = top2.index[1]
+                    confidence *= score
+            rules.append((clause.replace_predicates(replace_dict), confidence))
+        return rules
 
     def mask_non_predicates(self, similarities, symbols):
         mask = np.zeros_like(similarities)
@@ -113,8 +138,7 @@ class NeuralProver(object):
         :return: result proof states with substituted variables and new scores(ordered)
         """
         results = [None for _ in range(len(heads))]
-        substitution = [copy.copy(dictionary) for dictionary in state.substitution]
-        substitutions = [substitution for _ in heads]
+        substitutions = [[copy.copy(dictionary) for dictionary in state.substitution] for _ in heads]
         batch_size = len(atoms)
         constants1 = [[] for _ in range(atoms[0].arity+1)]
         constants2 = [[] for _ in range(atoms[0].arity+1)]
@@ -157,8 +181,8 @@ class NeuralProver(object):
             if tf.reduce_max(scores) >=0.99:
                 pass
         similarities = tf.stack(similarities)
-        new_scroes = tf.reduce_min(similarities,axis=0)
-        scores = tf.minimum(scores,new_scroes)
+        new_scroes = tf.reduce_prod(similarities,axis=0)
+        scores = scores*new_scroes
         for i in range(len(heads)):
             results[i] = ProofState(substitutions[i], scores[i])
         return results
@@ -168,7 +192,7 @@ class NeuralProver(object):
         :param symbols: list of symbols. [number of symbols, embedding_length]
         :return:
         """
-        return tf.stack([self.__embeddings[symbol] for symbol in symbols])
+        return tf.stack([self._embeddings[symbol] for symbol in symbols])
 
     def apply_rules(self, goals, depth, state):
         """
@@ -190,8 +214,6 @@ class NeuralProver(object):
             for s,c in zip(unified_states,clauses):
                 states.extend(self.apply_rule(c.body, depth, s))
         return states
-
-
 
     def apply_rule(self, body, depth, state):
         """
@@ -227,10 +249,10 @@ class NeuralProver(object):
             loss_value = self.loss(positive, negative, depth)
             weight_decay = 0.0 # This will cause local minimum?
             regularization = 0
-            for weights in self.__embeddings.variables:
+            for weights in self._embeddings.variables:
                 regularization += tf.nn.l2_loss(weights)*weight_decay
-            loss_value += regularization/len(self.__embeddings.variables)
-        return tape.gradient(loss_value, self.__embeddings.variables)
+            loss_value += regularization/len(self._embeddings.variables)
+        return tape.gradient(loss_value, self._embeddings.variables)
 
     def sample_minibatch(self, positive, negative, batch_size, ratio=0.2):
         positive_n = int(ratio*batch_size)
@@ -241,12 +263,12 @@ class NeuralProver(object):
 
     def train(self, positive, negative, depth, steps, batch_size=32):
         losses = []
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.008)
         for i in range(steps):
             p_sample, n_sample = self.sample_minibatch(positive, negative, batch_size)
             grads = self.grad(p_sample, n_sample, depth)
             clipped_grads = [tf.clip_by_value(grad, -1., 1.) for grad in grads]
-            optimizer.apply_gradients(zip(clipped_grads, self.__embeddings.variables),
+            optimizer.apply_gradients(zip(clipped_grads, self._embeddings.variables),
                                       global_step=tf.train.get_or_create_global_step())
             loss_avg = self.loss(positive, negative, depth)
             losses.append(float(loss_avg.numpy()))
@@ -255,33 +277,76 @@ class NeuralProver(object):
         return losses
 
     def all_variables(self):
-        return self.__embeddings.variables
+        return self._embeddings.variables
+
+    def get_str2weights(self):
+        str2weights = {}
+        for k,v in self._embeddings.embeddings.items():
+            if isinstance(k, str):
+                str2weights[k] = v
+            else:
+                str2weights[k.name] = v
+        return str2weights
 
     def log(self):
-        print(self.similarity_table)
+        rules = self.get_rules()
+        for clause, confidence in rules:
+            print("{} : {}".format(clause, confidence))
 
 # let similarities as variable
-class EfficientNeuralProver(NeuralProver):
+class SymbolicNeuralProver(NeuralProver):
     def __init__(self, clauses, embeddings):
         """
         :param clauses: all clauses, including facts! facts are represented as a
         clause with empty body.
         """
-        super(EfficientNeuralProver, self).__init__(clauses, embeddings)
-        self.para_predicates = self.__embeddings.para_predicates
-        self.all_predicates = self.__embeddings.predicates.union(self.para_predicates)
+        super(SymbolicNeuralProver, self).__init__(clauses, embeddings)
+        self.para_predicates = self._embeddings.para_predicates
+        self.all_predicates = self._embeddings.predicates.union(self.para_predicates)
         self.__init_variables()
 
+    @staticmethod
+    def from_ILP(ilp, para_clauses):
+        """
+        construct a NTP from a ILP definition
+        :return:
+        """
+        background = [Clause(atom,[]) for atom in ilp.background]
+        embeddings = Embeddings.from_clauses(background, para_clauses)
+        return SymbolicNeuralProver(background+para_clauses, embeddings)
+
+    def all_variables(self):
+        return self.similarity_parameters
+
+    def get_str2weights(self):
+        str2weights = {}
+        str2weights["para_predicates"] = self.similarity_parameters
+        return str2weights
+
+    def log(self):
+        pass
+
     def __init_variables(self):
-        all_predicates = list(self.all_predicates)
-        self.similarity_parameters = tf.get_variable("predicates_parameter", shape=[len(self.para_predicates),
-                                                                                    len(self.all_predicates)],
+        M = len(self.para_predicates)
+        N = len(self.all_predicates)
+        self.similarity_parameters = tf.get_variable("predicates_parameter", shape=[M*N - (M**2-M)/2],
                                                       initializer=tf.random_normal_initializer)
-        self.predicate_dict = {symbol:i for i,symbol in enumerate(all_predicates)}
+        self.pair_dict = {}
+        i = 0
+        for p1 in self.all_predicates:
+            for p2 in self.all_predicates:
+                if (p2, p1) in self.pair_dict:
+                    self.pair_dict[(p1, p2)] =\
+                        self.pair_dict[(p2, p1)]
+                elif p1 not in self.para_predicates and p2 not in self.para_predicates:
+                    continue
+                else:
+                    self.pair_dict[(p1, p2)] = i
+                    i += 1
 
 
     def update_similarity(self):
-        self.similarities = tf.nn.softmax(self.similarity_parameters, axis=0)
+        self.similarities = tf.nn.sigmoid(self.similarity_parameters)
 
 
     def batch_unify(self, heads, atoms, state):
@@ -292,7 +357,7 @@ class EfficientNeuralProver(NeuralProver):
         :return: result proof states with substituted variables and new scores(ordered)
         """
         results = [None for _ in range(len(heads))]
-        substitutions = [copy.copy(state.substitution) for _ in heads]
+        substitutions = [[copy.copy(dictionary) for dictionary in state.substitution] for _ in heads]
         batch_size = len(atoms)
         constants1 = [[] for _ in range(atoms[0].arity+1)]
         constants2 = [[] for _ in range(atoms[0].arity+1)]
@@ -312,9 +377,9 @@ class EfficientNeuralProver(NeuralProver):
                     if is_variable(symbol1) and is_variable(symbol2):
                         pass
                     elif is_variable(symbol1):
-                        substitutions[i][j].add((symbol1, symbol2))
+                        substitutions[i][j][symbol1] = symbol2
                     elif is_variable(symbol2):
-                        substitutions[i][j].add((symbol2, symbol1))
+                        substitutions[i][j][symbol2] = symbol1
                     else:
                         if j==0:
                             constants1[k].append(symbol1)
@@ -336,7 +401,7 @@ class EfficientNeuralProver(NeuralProver):
                 pass
         similarities = tf.stack(similarities)
         new_scroes = tf.reduce_min(similarities,axis=0)
-        scores = tf.minimum(scores,new_scroes)
+        scores = tf.minimum(scores, new_scroes)
         for i in range(len(heads)):
             results[i] = ProofState(substitutions[i], scores[i])
         return results
@@ -346,24 +411,18 @@ class EfficientNeuralProver(NeuralProver):
         for index1 in indexes1:
             sim_list = []
             for index2 in indexes2:
+                if index1 == index2:
+                    sim_list.append(1.0)
+                    continue
                 if isinstance(self.all_symbols[index1], str):
-                    if index1 == index2:
-                        sim_list.append(1.0)
-                    else:
-                        sim_list.append(0.0)
-                elif self.all_symbols[index1] in self.para_predicates:
-                    predicate1 = self.predicate_dict[self.all_symbols[index1]]
-                    predicate2 = self.predicate_dict[self.all_symbols[index2]]
-                    sim_list.append(self.similarities[predicate1, predicate2])
-                elif self.all_symbols[index2] in self.para_predicates:
-                    predicate1 = self.predicate_dict[self.all_symbols[index1]]
-                    predicate2 = self.predicate_dict[self.all_symbols[index2]]
-                    sim_list.append(self.similarities[predicate2, predicate1])
+                    sim_list.append(0.0)
+                elif self.all_symbols[index1] in self.para_predicates or\
+                    self.all_symbols[index2] in self.para_predicates:
+                    predicate1 = self.all_symbols[index1]
+                    predicate2 = self.all_symbols[index2]
+                    sim_list.append(self.similarities[self.pair_dict[(predicate1, predicate2)]])
                 else:
-                    if index1 == index2:
-                        sim_list.append(1.0)
-                    else:
-                        sim_list.append(0.0)
+                    sim_list.append(0.0)
             similarity.append(tf.stack(sim_list))
         return similarity
 
@@ -392,15 +451,24 @@ class RLProver(NeuralProver):
         embeddings = Embeddings.from_clauses(background, para_clauses, env.actions)
         return RLProver(background+para_clauses, embeddings, depth, env)
 
-    def policy(self, state):
-        goals = [Atom(action, state) for action in self.actions]
-        action_eval = self.prove(goals, self.depth)
+    def deduct_all_states(self):
+        states = self.env.all_states
+        goals = [Atom(action, state) for action in self.actions for state in states]
+        action_eval = tf.reshape(self.prove(goals, self.depth), shape=(len(self.actions), len(states)))
+        return {state: action_eval[:, i] for i, state in enumerate(states)}
+
+    def action_eval2prob(self, action_eval):
         sum_action_eval = tf.reduce_sum(action_eval)
         if sum_action_eval > 1.0:
             action_prob = action_eval / sum_action_eval
         else:
             action_prob = action_eval + (1.0 - sum_action_eval) / len(self.env.actions)
         return action_prob, sum_action_eval - 1.0
+
+    def policy(self, state):
+        goals = [Atom(action, state) for action in self.actions]
+        action_eval = self.prove(goals, self.depth)
+        return self.action_eval2prob(action_eval)
 
 
 
@@ -418,24 +486,24 @@ class Embeddings():
         self.predicates = set(predicates)
         self.constants = set(constants)
         self.para_predicates = set(para_predicates)
-        self.embbedings = {}
+        self.embeddings = {}
         for predicate in predicates.union(para_predicates):
-            self.embbedings[predicate] = tf.get_variable(predicate.name,shape=[dimension],dtype=tf.float32,
+            self.embeddings[predicate] = tf.get_variable(predicate.name, shape=[dimension], dtype=tf.float32,
                                                          initializer=tf.contrib.layers.xavier_initializer())
         for constant in constants:
-            self.embbedings[constant] = tf.get_variable(constant,shape=[dimension],dtype=tf.float32,
+            self.embeddings[constant] = tf.get_variable(constant, shape=[dimension], dtype=tf.float32,
                                                         initializer=tf.contrib.layers.xavier_initializer())
 
     def __getitem__(self, key):
-        return self.embbedings[key]
+        return self.embeddings[key]
 
     @property
     def symbols(self):
-        return self.embbedings.keys()
+        return self.embeddings.keys()
 
     @property
     def variables(self):
-        return self.embbedings.values()
+        return self.embeddings.values()
 
     @staticmethod
     def from_clauses(clauses, para_clauses, target_predicates=set()):

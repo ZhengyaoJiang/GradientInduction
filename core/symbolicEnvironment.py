@@ -50,6 +50,9 @@ class CliffWalking(SymbolicEnvironment):
         self.step = 0
         self.max_step = 50
 
+    @property
+    def all_states(self):
+        return [(str(i), str(j)) for i in range(WIDTH) for j in range(WIDTH)]
 
     def action_vec2symbol(self, action_vec):
         """

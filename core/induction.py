@@ -272,7 +272,7 @@ class ReinforceLearner(object):
         elif isinstance(self.agent, NeuralAgent):
             model_parameters["actor"] = self.agent.model
         else:
-            raise NotImplementedError("checkpoint of NTP not implemented")
+            model_parameters = self.agent.get_str2weights()
         root = tf.train.Checkpoint(optimizer=optimizer,
                                    optimizer_step=tf.train.get_or_create_global_step(),
                                    **model_parameters)
@@ -282,6 +282,10 @@ class ReinforceLearner(object):
     def sample_episode(self):
         if isinstance(self.agent, RLDILP):
             valuation = self.agent.deduction(self.env.state)
+        elif isinstance(self.agent, NeuralAgent):
+            pass
+        else:
+            valuation_dict = self.agent.deduct_all_states()
         action_prob_history = []
         action_history = []
         reward_history = []
@@ -295,7 +299,7 @@ class ReinforceLearner(object):
                 action_prob = self.agent.deduction(self.env.state)
                 excess = 0
             else:
-                action_prob, excess = self.agent.policy(self.env.state)
+                action_prob, excess = self.agent.action_eval2prob(valuation_dict[self.env.state])
             excesses.append(excess)
             action_index = np.random.choice(range(len(self.env.actions)), p=action_prob.numpy())
             action = self.env.action_index2symbol(action_index)
@@ -318,9 +322,12 @@ class ReinforceLearner(object):
             with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar(name, scalar)
 
-    def train(self, steps=300, name=None, discounting=1.0, batched=True, learning_rate=0.5):
+    def train(self, steps=300, name=None, discounting=1.0, batched=True, learning_rate=0.5, optimizer="RMSProp"):
         losses = []
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        if optimizer == "RMSProp":
+            optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        else:
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         if name:
             checkpoint_dir = "./model/" + name
             checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")

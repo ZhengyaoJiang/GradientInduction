@@ -4,7 +4,7 @@ from core.ilp import LanguageFrame
 
 
 class SymbolicEnvironment(object):
-    def __init__(self, background, initial_state):
+    def __init__(self, background, initial_state, actions):
         '''
         :param language_frame
         :param background: list of atoms, the background knowledge
@@ -14,6 +14,14 @@ class SymbolicEnvironment(object):
         self.background = background
         self.state = initial_state
         self.initial_state = initial_state
+        self.actions = actions
+        self.acc_reward = 0
+        self.step = 0
+
+    def reset(self):
+        self.acc_reward = 0
+        self.step = 0
+        self.state = self.initial_state
 
 
 UP = Predicate("up",2)
@@ -44,10 +52,7 @@ class CliffWalking(SymbolicEnvironment):
         background.append(Atom(ZERO, ["0"]))
         #background.extend([Atom(CLIFF, ["1", str(y)]) for y in range(2, WIDTH)])
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])
-        super(CliffWalking, self).__init__(background, ("0","0"))
-        self.acc_reward = 0
-        self.actions = actions
-        self.step = 0
+        super(CliffWalking, self).__init__(background, ("0","0"), actions)
         self.max_step = 50
 
     @property
@@ -64,10 +69,6 @@ class CliffWalking(SymbolicEnvironment):
     def action_index2symbol(self, action_index):
         return self.actions[action_index]
 
-    def reset(self):
-        self.acc_reward = 0
-        self.step = 0
-        self.state = self.initial_state
 
     def next_step(self, action):
         x = int(self.state[0])
@@ -99,4 +100,63 @@ class CliffWalking(SymbolicEnvironment):
                 return -10.0, True
         return -0.1, False
 
+ON = Predicate("on", 2)
+CLEAR = Predicate("clear", 1)
+MOVE = Predicate("move", 2)
+BLOCK_N = 4
+INI_STATE = {["a", "b", "c", "d"]}
 
+class BlockWorld(SymbolicEnvironment):
+    """
+    state is represented as a set of lists
+    """
+    def __init__(self, initial_state=INI_STATE):
+        actions = [MOVE]
+        self.language = LanguageFrame(actions, extensional=[ON, CLEAR],
+                                      constants=[str(i) for i in range(WIDTH)])
+        background = []
+        super(BlockWorld, self).__init__(background, initial_state, actions)
+        self.max_step = 20
+
+    def next_step(self, action):
+        """
+        :param action: action is a ground atom
+        :return:
+        """
+        block1, block2 = action.terms
+        for stack1 in self.state:
+            if stack1[-1] == block1:
+                for stack2 in self.state:
+                    if stack2[-1] == block2:
+                        del stack1[-1]
+                        stack2.append(stack1)
+        if block2 == "floor":
+            for stack1 in self.state:
+                if stack1[-1] == block1:
+                    del stack1[-1]
+                    self.state.add([block1])
+
+        self.step+=1
+        reward, finished = self.get_reward()
+        self.acc_reward += reward
+        return reward, finished
+
+    def state2atoms(self):
+        atoms = set()
+        for stack in self.state:
+            for i in range(len(stack)-1):
+                atoms.add(Atom(ON, [stack[i+1], stack[i]]))
+                if i == 0:
+                    atoms.add(Atom(ON, [stack[i], "floor"]))
+        atoms.add(Atom(CLEAR, ["floor"]))
+        return atoms
+
+    def get_reward(self):
+        pass
+
+class Unstack(BlockWorld):
+    def get_reward(self):
+        for stack in self.state:
+            if len(stack) == BLOCK_N:
+                return 1.0, True
+        return 0.0, False

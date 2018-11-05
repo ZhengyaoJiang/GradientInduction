@@ -69,7 +69,10 @@ class BaseDILP(object):
 
     def deduction(self, state=None):
         # takes background as input and return a valuation of target ground atoms
-        valuation = self.base_valuation
+        if not state:
+            valuation = self.base_valuation
+        else:
+            valuation = self.base_valuation+self.axioms2valuation(state)
         for _ in range(self.rules_manager.program_template.forward_n):
             valuation = self.inference_step(valuation)
         return valuation
@@ -205,27 +208,49 @@ class SupervisedDILP(BaseDILP):
         return losses
 
 class RLDILP(BaseDILP):
-    def __init__(self, rules_manager, env, independent_clause=True):
+    def __init__(self, rules_manager, env, independent_clause=True, state_encoding="terms"):
         super(RLDILP, self).__init__(rules_manager, env.background, independent_clause)
         self.env = env
+        self.state_encoding=state_encoding
+        if self.state_encoding=="atoms":
+            self.all_actions = self.get_all_actions()
+        else:
+            self.all_actions = self.env.actions
 
-    def valuation2action_prob(self, valuation, state):
+    def get_all_actions(self):
+        atoms = self.valuation2atoms(self.base_valuation, -1).keys() #ordered
+        actions = []
+        for atom in atoms:
+            if atom.predicate in self.env.actions:
+                actions.append(atom)
+        return actions
+
+    def valuation2action_prob(self, valuation, state=None):
         """
         :param valuation:
         :param state: tuple of terms
         :return: action probabilities, difference between sum of action probabilities and 1
         """
+        if self.state_encoding=="atoms":
+            assert not state
+        else:
+            assert state
         atoms = self.valuation2atoms(valuation, -1).keys() #ordered
-        indexes = [None for _ in self.env.actions]
+        indexes = [None for _ in range(self.env.action_n)]
         for i,atom in enumerate(atoms):
-            if state == atom.terms and atom.predicate in self.env.actions:
-                indexes[self.env.actions.index(atom.predicate)] = i
+            if self.state_encoding == "terms":
+                if state == atom.terms and atom.predicate in self.env.actions:
+                    indexes[self.all_actions.index(atom.predicate)] = i
+            else:
+                if atom in self.all_actions:
+                    indexes[self.all_actions.index(atom)] = i
         action_eval = tf.gather(valuation, indexes)
         sum_action_eval = tf.reduce_sum(action_eval)
         if sum_action_eval>1.0:
             action_prob = action_eval/sum_action_eval
         else:
             action_prob = action_eval + (1.0-sum_action_eval)/len(self.env.actions)
+        action_prob /= tf.reduce_sum(action_prob)
         return action_prob, sum_action_eval-1.0
 
     def get_str2weights(self):
@@ -264,6 +289,7 @@ class ReinforceLearner(object):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         self.env = enviornment
         self.agent = agent
+        self.state_encoding = self.agent.state_encoding
 
     def create_checkpoint(self, optimizer):
         model_parameters = {}
@@ -280,12 +306,13 @@ class ReinforceLearner(object):
 
 
     def sample_episode(self):
-        if isinstance(self.agent, RLDILP):
-            valuation = self.agent.deduction(self.env.state)
-        elif isinstance(self.agent, NeuralAgent):
-            pass
-        else:
-            valuation_dict = self.agent.deduct_all_states()
+        if self.state_encoding=="terms":
+            if isinstance(self.agent, RLDILP):
+                valuation = self.agent.deduction(self.env.state)
+            elif isinstance(self.agent, NeuralAgent):
+                pass
+            else:
+                valuation_dict = self.agent.deduct_all_states()
         action_prob_history = []
         action_history = []
         reward_history = []
@@ -293,16 +320,24 @@ class ReinforceLearner(object):
         state_history = []
         excesses = []
         while True:
-            if isinstance(self.agent, RLDILP):
-                action_prob, excess = self.agent.valuation2action_prob(valuation, self.env.state)
-            elif isinstance(self.agent, NeuralAgent):
-                action_prob = self.agent.deduction(self.env.state)
-                excess = 0
+            if self.state_encoding=="terms":
+                if isinstance(self.agent, RLDILP):
+                    action_prob, excess = self.agent.valuation2action_prob(valuation, self.env.state)
+                elif isinstance(self.agent, NeuralAgent):
+                    action_prob = self.agent.deduction(self.env.state)
+                    excess = 0
+                else:
+                    action_prob, excess = self.agent.action_eval2prob(valuation_dict[self.env.state])
             else:
-                action_prob, excess = self.agent.action_eval2prob(valuation_dict[self.env.state])
+                if isinstance(self.agent, RLDILP):
+                    valuation = self.agent.deduction(self.env.state2atoms(self.env.state))
+                    action_prob, excess = self.agent.valuation2action_prob(valuation)
             excesses.append(excess)
-            action_index = np.random.choice(range(len(self.env.actions)), p=action_prob.numpy())
-            action = self.env.action_index2symbol(action_index)
+            action_index = np.random.choice(range(self.env.action_n), p=action_prob.numpy())
+            if self.state_encoding == "terms":
+                action = self.env.action_index2symbol(action_index)
+            else:
+                action = self.agent.all_actions[action_index]
             reward, finished = self.env.next_step(action)
             state_history.append(self.env.state)
             reward_history.append(reward)
@@ -347,7 +382,7 @@ class ReinforceLearner(object):
                         self.sample_episode()
                     returns = discount(reward_history, discounting)
                     additional_discount = np.cumprod(discounting*np.ones_like(returns))
-                    log = {"return":returns[0], "action_history":[self.env.action_index2symbol(action_index).name for action_index in action_history]}
+                    log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index]) for action_index in action_history]}
                     loss_value = tf.reduce_sum(self.loss(action_prob_history, returns, additional_discount))
                     #loss_value += 1.0*excess
                 grads = tape.gradient(loss_value, self.agent.all_variables())
@@ -358,12 +393,15 @@ class ReinforceLearner(object):
                     = self.sample_episode()
                 returns = discount(reward_history, discounting)
                 additional_discount = np.cumprod(discounting*np.ones_like(returns))
-                log = {"return":returns[0], "action_history":[self.env.action_index2symbol(action_index).name for action_index in action_history]}
+                log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])for action_index in action_history]}
                 for action_index, r, acc_discount, s in zip(action_history, returns, additional_discount, state_history):
                     with tf.GradientTape() as tape:
                         if isinstance(self.agent, RLDILP):
-                            valuation = self.agent.deduction()
-                            prob = self.agent.valuation2action_prob(valuation, s)[action_index]
+                            valuation = self.agent.deduction(self.env.state2atoms(s))
+                            if self.state_encoding == "atoms":
+                                prob = self.agent.valuation2action_prob(valuation)[0][action_index]
+                            else:
+                                prob = self.agent.valuation2action_prob(valuation, s)[0][action_index]
                         else:
                             prob = self.agent.deduction(s)[action_index]
                         loss_value = self.loss(prob, r, acc_discount)

@@ -76,6 +76,26 @@ def setup_cliffwalking(invented=False):
     man = RulesManager(env.language, program_temp)
     return man, env
 
+def setup_unstack():
+    env = Unstack()
+    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    invented = Predicate("invented", 2)
+    program_temp = ProgramTemplate([invented], {invented:inventedtemp, MOVE:maintemp}, 3)
+    man = RulesManager(env.language, program_temp)
+    return man, env
+
+def setup_stack():
+    env = Stack(initial_state=INI_STATE2)
+    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    invented = Predicate("invented", 2)
+    program_temp = ProgramTemplate([invented], {invented:inventedtemp, MOVE:maintemp}, 3)
+    man = RulesManager(env.language, program_temp)
+    return man, env
+
+
+
 
 #@ray.remote
 def start_DILP(task, name):
@@ -95,9 +115,23 @@ def start_DILP(task, name):
         # learner = PPOLearner(agent, env, critic)
         learner = ReinforceLearner(agent, env)
         learning_rate = 0.1
+    elif task == "unstack":
+        man, env = setup_unstack()
+        agent = RLDILP(man, env, state_encoding="atoms")
+        # critic = NeuralCritic([10,10], len(env.state))
+        # learner = PPOLearner(agent, env, critic)
+        learner = ReinforceLearner(agent, env)
+        learning_rate = 0.5
+    elif task == "stack":
+        man, env = setup_stack()
+        agent = RLDILP(man, env, state_encoding="atoms")
+        # critic = NeuralCritic([10,10], len(env.state))
+        # learner = PPOLearner(agent, env, critic)
+        learner = ReinforceLearner(agent, env)
+        learning_rate = 0.1
     else:
         raise ValueError()
-    return learner.train(steps=6000, name=name, learning_rate=learning_rate)[-1]
+    return learner.train(steps=6000, name=name, batched=False, learning_rate=learning_rate)[-1]
 
 def start_NN(task, name=None):
     if task == "cliffwalking":
@@ -155,6 +189,6 @@ if __name__ == "__main__":
     tf.enable_eager_execution()
     with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
-        #start_DILP("predecessor", None)
-        start_NTP("cliffwalking", "NTPRL08")
+        start_DILP("stack", "stack10")
+        #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

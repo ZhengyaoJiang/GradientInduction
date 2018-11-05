@@ -2,6 +2,7 @@ from __future__ import print_function, division, absolute_import
 import numpy as np
 import tensorflow as tf
 from collections import OrderedDict
+from sklearn.utils.extmath import softmax
 import pandas as pd
 import tensorflow.contrib.eager as tfe
 import os
@@ -17,6 +18,11 @@ class BaseDILP(object):
         self.__init__rule_weights(scope_name)
         self.ground_atoms = rules_manager.all_grounds
         self.base_valuation = self.axioms2valuation(background)
+        self._construct_graph()
+
+    def _construct_graph(self):
+        self.tf_input_valuation = tf.placeholder(shape=self.base_valuation.shape, dtype=tf.float32)
+        self.tf_result_valuation = self._construct_deduction()
 
     def __init__rule_weights(self, scope_name="rule_weights"):
         if self.independent_clause:
@@ -36,12 +42,13 @@ class BaseDILP(object):
                                                                    initializer=tf.random_normal_initializer,
                                                                    dtype=tf.float32)
 
-    def show_definition(self):
+    def show_definition(self, sess):
         for predicate, clauses in self.rules_manager.all_clauses.items():
             rules_weights = self.rule_weights[predicate]
+            rules_weights = sess.run([rules_weights])[0]
             print(str(predicate))
             for i, rule_weights in enumerate(rules_weights):
-                weights = tf.nn.softmax(rule_weights)
+                weights = softmax([rule_weights])[0]
                 indexes = np.nonzero(weights>0.05)[0]
                 print("clasue {}".format(i))
                 for j in range(len(indexes)):
@@ -67,12 +74,21 @@ class BaseDILP(object):
                 result[self.ground_atoms[i]] = float(value)
         return result
 
-    def deduction(self, state=None):
+    def deduction(self, state=None, session=None):
         # takes background as input and return a valuation of target ground atoms
         if not state:
             valuation = self.base_valuation
         else:
             valuation = self.base_valuation+self.axioms2valuation(state)
+        if session:
+            result = session.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:valuation})
+        else:
+            with tf.Session() as sess:
+                result = sess.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:valuation})
+        return result[0]
+
+    def _construct_deduction(self):
+        valuation = self.tf_input_valuation
         for _ in range(self.rules_manager.program_template.forward_n):
             valuation = self.inference_step(valuation)
         return valuation
@@ -131,10 +147,12 @@ class BaseDILP(object):
 
 
 class SupervisedDILP(BaseDILP):
-    def __init__(self, rules_manager, ilp):
+    def __init__(self, rules_manager, ilp, learning_rate=0.5):
         super(SupervisedDILP, self).__init__(rules_manager, ilp.background)
         self.training_data = OrderedDict() # index to label
         self.__init_training_data(ilp.positive, ilp.negative)
+        self.learning_rate=learning_rate
+        self._construct_train()
 
     def __init_training_data(self, positive, negative):
         for i, atom in enumerate(self.ground_atoms):
@@ -143,26 +161,32 @@ class SupervisedDILP(BaseDILP):
             elif atom in negative:
                 self.training_data[i] = 0.0
 
+    def _construct_train(self):
+        self.tf_loss = self.loss()
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
+        grads, loss = self.grad()
+        self.tf_train = optimizer.apply_gradients(zip(grads, self.all_variables()),
+                                  global_step=tf.train.get_or_create_global_step())
+
     def loss(self, batch_size=-1):
         labels = np.array(self.training_data.values(), dtype=np.float32)
-        outputs = tf.gather(self.deduction(), np.array(self.training_data.keys(), dtype=np.int32))
+        outputs = tf.gather(self.tf_result_valuation, np.array(self.training_data.keys(), dtype=np.int32))
         if batch_size>0:
-            index = np.random.randint(0, len(labels), batch_size)
+            index = tf.random_uniform([batch_size], 0, len(labels))
             labels = labels[index]
             outputs = tf.gather(outputs, index)
         loss = -tf.reduce_mean(labels*tf.log(outputs+1e-10)+(1-labels)*tf.log(1-outputs+1e-10))
         return loss
 
     def grad(self):
-        with tf.GradientTape() as tape:
-            loss_value = self.loss(-1)
-            weight_decay = 0.0
-            regularization = 0
-            for weights in self.all_variables():
-                weights = tf.nn.softmax(weights)
-                regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
-            loss_value += regularization/len(self.all_variables())
-        return tape.gradient(loss_value, self.all_variables()), loss_value
+        loss_value = self.loss(-1)
+        weight_decay = 0.0
+        regularization = 0
+        for weights in self.all_variables():
+            weights = tf.nn.softmax(weights)
+            regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
+        loss_value += regularization/len(self.all_variables())
+        return tf.gradients(loss_value, self.all_variables()), loss_value
 
     def train(self, steps=300, name=None):
         """
@@ -177,7 +201,7 @@ class SupervisedDILP(BaseDILP):
             str2weights = {str(key): value for key, value in self.rule_weights.items()}
 
         if name:
-            checkpoint = tfe.Checkpoint(**str2weights)
+            checkpoint = tf.train.Checkpoint(**str2weights)
             checkpoint_dir = "./model/"+name
             checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
             try:
@@ -186,25 +210,24 @@ class SupervisedDILP(BaseDILP):
                 print(e)
 
         losses = []
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=0.5)
 
-        for i in range(steps):
-            grads, loss = self.grad()
-            optimizer.apply_gradients(zip(grads, self.all_variables()),
-                                      global_step=tf.train.get_or_create_global_step())
-            loss_avg = float(loss.numpy())
-            losses.append(loss_avg)
-            print("-"*20)
-            print("step "+str(i)+" loss is "+str(loss_avg))
-            if i%5==0:
-                self.show_definition()
-                valuation_dict = self.valuation2atoms(self.deduction()).items()
-                for atom, value in valuation_dict:
-                    print(str(atom)+": "+str(value))
-                if name:
-                    checkpoint.save(checkpoint_prefix)
-                    pd.Series(np.array(losses)).to_csv(name+".csv")
-            print("-"*20+"\n")
+        with tf.Session() as sess:
+            sess.run([tf.initializers.global_variables()])
+            for i in range(steps):
+                _, loss = sess.run([self.tf_train, self.tf_loss], feed_dict={self.tf_input_valuation:self.base_valuation})
+                loss_avg = float(loss)
+                losses.append(loss_avg)
+                print("-"*20)
+                print("step "+str(i)+" loss is "+str(loss_avg))
+                if i%5==0:
+                    self.show_definition(sess)
+                    valuation_dict = self.valuation2atoms(self.deduction(session=sess)).items()
+                    for atom, value in valuation_dict:
+                        print(str(atom)+": "+str(value))
+                    if name:
+                        checkpoint.save(checkpoint_prefix)
+                        pd.Series(np.array(losses)).to_csv(name+".csv")
+                print("-"*20+"\n")
         return losses
 
 class RLDILP(BaseDILP):
@@ -285,11 +308,12 @@ class RLDILP(BaseDILP):
 
 
 class ReinforceLearner(object):
-    def __init__(self, agent, enviornment):
+    def __init__(self, agent, enviornment, learning_rate):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         self.env = enviornment
         self.agent = agent
         self.state_encoding = self.agent.state_encoding
+        self.learning_rate = learning_rate
 
     def create_checkpoint(self, optimizer):
         model_parameters = {}
@@ -357,12 +381,12 @@ class ReinforceLearner(object):
             with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar(name, scalar)
 
-    def train(self, steps=300, name=None, discounting=1.0, batched=True, learning_rate=0.5, optimizer="RMSProp"):
+    def train(self, steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp"):
         losses = []
         if optimizer == "RMSProp":
-            optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
         else:
-            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
         if name:
             checkpoint_dir = "./model/" + name
             checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")

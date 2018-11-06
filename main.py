@@ -184,6 +184,6 @@ if __name__ == "__main__":
     #start_NTP("predecessor", "predecessor"+"21")
     with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
-        start_DILP("even", None)
+        start_DILP("stack", None)
         #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

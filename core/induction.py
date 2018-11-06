@@ -21,7 +21,7 @@ class BaseDILP(object):
         self._construct_graph()
 
     def _construct_graph(self):
-        self.tf_input_valuation = tf.placeholder(shape=self.base_valuation.shape, dtype=tf.float32)
+        self.tf_input_valuation = tf.placeholder(shape=[None, self.base_valuation.shape[0]], dtype=tf.float32)
         self.tf_result_valuation = self._construct_deduction()
 
     def __init__rule_weights(self, scope_name="rule_weights"):
@@ -88,13 +88,13 @@ class BaseDILP(object):
         return result[0]
 
     def _construct_deduction(self):
-        valuation = self.tf_input_valuation
+        valuation = tf.transpose(self.tf_input_valuation)
         for _ in range(self.rules_manager.program_template.forward_n):
             valuation = self.inference_step(valuation)
-        return valuation
+        return tf.transpose(valuation)
 
     def inference_step(self, valuation):
-        deduced_valuation = tf.zeros(len(self.ground_atoms))
+        deduced_valuation = tf.zeros_like(valuation)
         # deduction_matrices = self.rules_manager.deducation_matrices[predicate]
         for predicate, matrix in self.rules_manager.deduction_matrices.items():
             deduced_valuation += BaseDILP.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
@@ -116,7 +116,7 @@ class BaseDILP(object):
         c_p = None
         for i in range(len(result_valuations)):
             valuations = tf.stack(result_valuations[i])
-            prob_rule_weights = tf.nn.softmax(rule_weights[i])[:, None]
+            prob_rule_weights = tf.nn.softmax(rule_weights[i])[:, None, None]
             if c_p==None:
                 c_p = tf.reduce_sum(prob_rule_weights*valuations, axis=0)
             else:
@@ -248,17 +248,12 @@ class RLDILP(BaseDILP):
                 actions.append(atom)
         return actions
 
-    def valuation2action_prob(self, valuation, state=None):
+    def get_valuation_indexes(self, state=None):
         """
-        :param valuation:
-        :param state: tuple of terms
+        :param state: tuple of terms, if encoding is atoms it is not need to be feed
         :return: action probabilities, difference between sum of action probabilities and 1
         """
-        if self.state_encoding=="atoms":
-            assert not state
-        else:
-            assert state
-        atoms = self.valuation2atoms(valuation, -1).keys() #ordered
+        atoms = self.valuation2atoms(self.base_valuation, -1).keys() #ordered
         indexes = [None for _ in range(self.env.action_n)]
         for i,atom in enumerate(atoms):
             if self.state_encoding == "terms":
@@ -267,14 +262,7 @@ class RLDILP(BaseDILP):
             else:
                 if atom in self.all_actions:
                     indexes[self.all_actions.index(atom)] = i
-        action_eval = tf.gather(valuation, indexes)
-        sum_action_eval = tf.reduce_sum(action_eval)
-        if sum_action_eval>1.0:
-            action_prob = action_eval/sum_action_eval
-        else:
-            action_prob = action_eval + (1.0-sum_action_eval)/len(self.env.actions)
-        action_prob /= tf.reduce_sum(action_prob)
-        return action_prob, sum_action_eval-1.0
+        return np.array(indexes)
 
     def get_str2weights(self):
         if self.independent_clause:
@@ -305,8 +293,6 @@ class RLDILP(BaseDILP):
             print(str(atom)+": "+str(value))
 
 
-
-
 class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
@@ -314,6 +300,41 @@ class ReinforceLearner(object):
         self.agent = agent
         self.state_encoding = self.agent.state_encoding
         self.learning_rate = learning_rate
+        self._construct_train(learning_rate)
+
+    def _construct_train(self, learning_rate):
+        self.tf_returns = tf.placeholder(shape=[None], dtype=tf.float32)
+        self.tf_additional_discount = tf.placeholder(shape=[None], dtype=tf.float32)
+        self.tf_valuation_index = tf.placeholder(shape=[None, self.env.action_n], dtype=tf.int32)
+        self.tf_action_index = tf.placeholder(shape=[None], dtype=tf.int32)
+        self._construct_action_prob()
+        indexed_action_prob = tf.batch_gather(self.tf_action_prob, self.tf_action_index[:, None])[:, 0]
+        self.tf_loss =-tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))\
+                      *self.tf_returns*self.tf_additional_discount
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        grads = self.grad()
+        self.tf_train = optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
+                                  global_step=tf.train.get_or_create_global_step())
+
+    def _construct_action_prob(self):
+        if self.state_encoding == "atoms":
+            if isinstance(self.agent, RLDILP):
+                action_eval = tf.batch_gather(self.agent.tf_result_valuation , self.tf_valuation_index)
+                sum_action_eval = tf.reduce_sum(action_eval)
+                action_prob = tf.where(sum_action_eval > 1.0,
+                                       action_eval / sum_action_eval,
+                                       action_eval + (1.0 - sum_action_eval) / self.env.action_n)
+                self.tf_action_prob = action_prob / tf.reduce_sum(action_prob)
+
+    def grad(self):
+        loss_value = self.tf_loss
+        weight_decay = 0.0
+        regularization = 0
+        for weights in self.agent.all_variables():
+            weights = tf.nn.softmax(weights)
+            regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
+        loss_value += regularization/len(self.agent.all_variables())
+        return tf.gradients(loss_value, self.agent.all_variables())
 
     def create_checkpoint(self, optimizer):
         model_parameters = {}
@@ -328,36 +349,24 @@ class ReinforceLearner(object):
                                    **model_parameters)
         return root
 
-
-    def sample_episode(self):
-        if self.state_encoding=="terms":
-            if isinstance(self.agent, RLDILP):
-                valuation = self.agent.deduction(self.env.state)
-            elif isinstance(self.agent, NeuralAgent):
-                pass
-            else:
-                valuation_dict = self.agent.deduct_all_states()
+    def sample_episode(self, sess):
         action_prob_history = []
         action_history = []
         reward_history = []
         action_trajectory_prob = []
+        valuation_history = []
         state_history = []
         excesses = []
+        valuation_index_history = []
         while True:
+            indexes = self.agent.get_valuation_indexes(self.env.state)
             if self.state_encoding=="terms":
-                if isinstance(self.agent, RLDILP):
-                    action_prob, excess = self.agent.valuation2action_prob(valuation, self.env.state)
-                elif isinstance(self.agent, NeuralAgent):
-                    action_prob = self.agent.deduction(self.env.state)
-                    excess = 0
-                else:
-                    action_prob, excess = self.agent.action_eval2prob(valuation_dict[self.env.state])
+                valuation = self.agent.base_valuation
             else:
-                if isinstance(self.agent, RLDILP):
-                    valuation = self.agent.deduction(self.env.state2atoms(self.env.state))
-                    action_prob, excess = self.agent.valuation2action_prob(valuation)
-            excesses.append(excess)
-            action_index = np.random.choice(range(self.env.action_n), p=action_prob.numpy())
+                valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state)
+            action_prob = sess.run([self.tf_action_prob], feed_dict={self.agent.tf_input_valuation: [valuation],
+                                                                     self.tf_valuation_index: [indexes]})[0][0]
+            action_index = np.random.choice(range(self.env.action_n), p=action_prob)
             if self.state_encoding == "terms":
                 action = self.env.action_index2symbol(action_index)
             else:
@@ -367,14 +376,13 @@ class ReinforceLearner(object):
             reward_history.append(reward)
             action_history.append(action_index)
             action_trajectory_prob.append(action_prob[action_index])
+            valuation_history.append(valuation)
+            valuation_index_history.append(indexes)
             if finished:
                 self.env.reset()
                 break
-        total_excess = tf.reduce_sum(tf.stack(excesses)**2)
-        return reward_history, action_history, action_trajectory_prob, state_history, total_excess
+        return reward_history, action_history, action_trajectory_prob, state_history, valuation_history, valuation_index_history
 
-    def loss(self, selected_action_prob, returns, additional_discount):
-        return -tf.log(tf.clip_by_value(selected_action_prob, 1e-5, 1.0))*returns*additional_discount
 
     def summary_scalar(self, name, scalar):
         if self.summary_writer:
@@ -399,50 +407,52 @@ class ReinforceLearner(object):
         else:
             self.summary_writer = None
 
-        for i in range(steps):
-            if batched:
-                with tf.GradientTape() as tape:
-                    reward_history, action_history, action_prob_history, state_history, excess = \
-                        self.sample_episode()
+        with tf.Session() as sess:
+            sess.run([tf.initializers.global_variables()])
+            for i in range(steps):
+                if batched:
+                    reward_history, action_history, action_prob_history, state_history, valuation_history, valuation_index_history = \
+                        self.sample_episode(sess)
                     returns = discount(reward_history, discounting)
                     additional_discount = np.cumprod(discounting*np.ones_like(returns))
-                    log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index]) for action_index in action_history]}
-                    loss_value = tf.reduce_sum(self.loss(action_prob_history, returns, additional_discount))
+                    log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])
+                                                                  for action_index in action_history]}
                     #loss_value += 1.0*excess
-                grads = tape.gradient(loss_value, self.agent.all_variables())
-                optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
-                                          global_step=tf.train.get_or_create_global_step())
-            else:
-                reward_history, action_history, action_prob_history, state_history, excess\
-                    = self.sample_episode()
-                returns = discount(reward_history, discounting)
-                additional_discount = np.cumprod(discounting*np.ones_like(returns))
-                log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])for action_index in action_history]}
-                for action_index, r, acc_discount, s in zip(action_history, returns, additional_discount, state_history):
-                    with tf.GradientTape() as tape:
-                        if isinstance(self.agent, RLDILP):
-                            valuation = self.agent.deduction(self.env.state2atoms(s))
-                            if self.state_encoding == "atoms":
-                                prob = self.agent.valuation2action_prob(valuation)[0][action_index]
+                    sess.run([self.tf_train], {self.tf_returns:np.array(returns), self.tf_additional_discount:np.array(additional_discount),
+                                               self.tf_action_index:np.array(action_history),
+                                               self.tf_valuation_index: np.array(valuation_index_history),
+                                               self.agent.tf_input_valuation: np.array(valuation_history)})
+                else:
+                    reward_history, action_history, action_prob_history, state_history, excess\
+                        = self.sample_episode()
+                    returns = discount(reward_history, discounting)
+                    additional_discount = np.cumprod(discounting*np.ones_like(returns))
+                    log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])for action_index in action_history]}
+                    for action_index, r, acc_discount, s in zip(action_history, returns, additional_discount, state_history):
+                        with tf.GradientTape() as tape:
+                            if isinstance(self.agent, RLDILP):
+                                valuation = self.agent.deduction(self.env.state2atoms(s))
+                                if self.state_encoding == "atoms":
+                                    prob = self.agent.valuation2action_prob(valuation)[0][action_index]
+                                else:
+                                    prob = self.agent.valuation2action_prob(valuation, s)[0][action_index]
                             else:
-                                prob = self.agent.valuation2action_prob(valuation, s)[0][action_index]
-                        else:
-                            prob = self.agent.deduction(s)[action_index]
-                        loss_value = self.loss(prob, r, acc_discount)
-                    grads = tape.gradient(loss_value, self.agent.all_variables())
-                    optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
+                                prob = self.agent.deduction(s)[action_index]
+                            loss_value = self.loss(prob, r, acc_discount)
+                        grads = tape.gradient(loss_value, self.agent.all_variables())
+                        optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
                                           global_step=tf.train.get_or_create_global_step())
-            self.summary_scalar("return", returns[0])
+                self.summary_scalar("return", returns[0])
 
-            print("-"*20)
-            print("step "+str(i)+"return is "+str(log["return"]))
-            if i%5==0:
-                self.agent.log()
-                pprint(log)
-                if name:
-                    checkpoint.save(checkpoint_prefix)
-                    pd.Series(np.array(losses)).to_csv(name+".csv")
-            print("-"*20+"\n")
+                print("-"*20)
+                print("step "+str(i)+"return is "+str(log["return"]))
+                if i%5==0:
+                    self.agent.log()
+                    pprint(log)
+                    if name:
+                        checkpoint.save(checkpoint_prefix)
+                        pd.Series(np.array(losses)).to_csv(name+".csv")
+                print("-"*20+"\n")
         return log["return"]
 
 class PPOLearner(ReinforceLearner):

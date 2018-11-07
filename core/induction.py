@@ -81,10 +81,10 @@ class BaseDILP(object):
         else:
             valuation = self.base_valuation+self.axioms2valuation(state)
         if session:
-            result = session.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:valuation})
+            result = session.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:[valuation]})[0]
         else:
             with tf.Session() as sess:
-                result = sess.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:valuation})
+                result = sess.run([self.tf_result_valuation], feed_dict={self.tf_input_valuation:[valuation]})[0]
         return result[0]
 
     def _construct_deduction(self):
@@ -170,7 +170,7 @@ class SupervisedDILP(BaseDILP):
 
     def loss(self, batch_size=-1):
         labels = np.array(self.training_data.values(), dtype=np.float32)
-        outputs = tf.gather(self.tf_result_valuation, np.array(self.training_data.keys(), dtype=np.int32))
+        outputs = tf.gather(self.tf_result_valuation[0], np.array(self.training_data.keys(), dtype=np.int32))
         if batch_size>0:
             index = tf.random_uniform([batch_size], 0, len(labels))
             labels = labels[index]
@@ -214,7 +214,7 @@ class SupervisedDILP(BaseDILP):
         with tf.Session() as sess:
             sess.run([tf.initializers.global_variables()])
             for i in range(steps):
-                _, loss = sess.run([self.tf_train, self.tf_loss], feed_dict={self.tf_input_valuation:self.base_valuation})
+                _, loss = sess.run([self.tf_train, self.tf_loss], feed_dict={self.tf_input_valuation:[self.base_valuation]})
                 loss_avg = float(loss)
                 losses.append(loss_avg)
                 print("-"*20)
@@ -286,9 +286,9 @@ class RLDILP(BaseDILP):
             return None, None
 
 
-    def log(self):
-        self.show_definition()
-        valuation_dict = self.valuation2atoms(self.deduction()).items()
+    def log(self, sess):
+        self.show_definition(sess)
+        valuation_dict = self.valuation2atoms(self.deduction(session=sess)).items()
         for atom, value in valuation_dict:
             print(str(atom)+": "+str(value))
 
@@ -359,13 +359,14 @@ class ReinforceLearner(object):
         excesses = []
         valuation_index_history = []
         while True:
-            indexes = self.agent.get_valuation_indexes(self.env.state)
+            indexes = self.agent.get_valuation_indexes(self.env.state2atoms(self.env.state))
             if self.state_encoding=="terms":
                 valuation = self.agent.base_valuation
             else:
-                valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state)
-            action_prob = sess.run([self.tf_action_prob], feed_dict={self.agent.tf_input_valuation: [valuation],
-                                                                     self.tf_valuation_index: [indexes]})[0][0]
+                valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state2atoms(self.env.state))
+            action_prob,result = sess.run([self.tf_action_prob, self.agent.tf_result_valuation], feed_dict={self.agent.tf_input_valuation: [valuation],
+                                                                     self.tf_valuation_index: [indexes]})
+            action_prob = action_prob[0]
             action_index = np.random.choice(range(self.env.action_n), p=action_prob)
             if self.state_encoding == "terms":
                 action = self.env.action_index2symbol(action_index)
@@ -447,7 +448,7 @@ class ReinforceLearner(object):
                 print("-"*20)
                 print("step "+str(i)+"return is "+str(log["return"]))
                 if i%5==0:
-                    self.agent.log()
+                    self.agent.log(sess)
                     pprint(log)
                     if name:
                         checkpoint.save(checkpoint_prefix)

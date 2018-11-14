@@ -2,6 +2,7 @@ from __future__ import print_function, division, absolute_import
 from core.clause import *
 from core.ilp import LanguageFrame
 import copy
+from random import shuffle
 
 
 class SymbolicEnvironment(object):
@@ -115,12 +116,11 @@ class BlockWorld(SymbolicEnvironment):
     """
     state is represented as a list of lists
     """
-    def __init__(self, initial_state=INI_STATE):
+    def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=()):
         actions = [MOVE]
-        self.language = LanguageFrame(actions, extensional=[ON, CLEAR],
+        self.language = LanguageFrame(actions, extensional=[ON, CLEAR]+list(additional_predicates),
                                       constants=sum(initial_state, [])+["floor"])
-        background = []
-        super(BlockWorld, self).__init__(background, initial_state, actions)
+        super(BlockWorld, self).__init__(list(background), initial_state, actions)
         self.max_step = 50
 
     def clean_empty_stack(self):
@@ -174,10 +174,10 @@ class BlockWorld(SymbolicEnvironment):
 class Unstack(BlockWorld):
     def get_reward(self):
         if self.step >= self.max_step:
-            return -1.0, True
+            return -0.0, True
         for stack in self.state:
             if len(stack) > 1:
-                return -0.05, False
+                return -0.02, False
         return 1.0, True
 
 class Stack(BlockWorld):
@@ -188,3 +188,27 @@ class Stack(BlockWorld):
             if len(stack) == BLOCK_N:
                 return 1.0, True
         return -0.02, False
+
+GOAL_ON = Predicate("goal_on", 2)
+class On(BlockWorld):
+    def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"])):
+        super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON], background=[goal_state])
+        self.goal_state = goal_state
+
+    def get_reward(self):
+        if self.step >= self.max_step:
+            return -0.0, True
+        if Atom(ON, self.goal_state.terms) in self.state2atoms(self.state):
+            return 1.0, True
+        return -0.02, False
+
+def random_initial_state():
+    result = [[] for _ in range(BLOCK_N)]
+    all_entities = ["a", "b", "c", "d", "e", "f", "g"][:BLOCK_N]
+    shuffle(all_entities)
+    for entity in all_entities:
+        stack_id = np.random.randint(0, BLOCK_N)
+        result[stack_id].append(entity)
+    return result
+
+

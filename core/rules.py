@@ -50,7 +50,8 @@ class RulesManager():
 
         body_variable = tuple(range(intensional.arity+rule_template.variables_n))
         if rule_template.allow_intensional:
-            predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
+            predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)))
+            # .union(set([intensional])))
         else:
             predicates = self.__language.extensional
         terms = []

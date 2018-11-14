@@ -219,7 +219,7 @@ class SupervisedDILP(BaseDILP):
                 losses.append(loss_avg)
                 print("-"*20)
                 print("step "+str(i)+" loss is "+str(loss_avg))
-                if i%5==0:
+                if i%10==0:
                     self.show_definition(sess)
                     valuation_dict = self.valuation2atoms(self.deduction(session=sess)).items()
                     for atom, value in valuation_dict:
@@ -309,11 +309,12 @@ class ReinforceLearner(object):
         self.tf_action_index = tf.placeholder(shape=[None], dtype=tf.int32)
         self._construct_action_prob()
         indexed_action_prob = tf.batch_gather(self.tf_action_prob, self.tf_action_index[:, None])[:, 0]
-        self.tf_loss =-tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))\
-                      *self.tf_returns*self.tf_additional_discount
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
+        self.tf_loss =-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))\
+                      *self.tf_returns*self.tf_additional_discount)
+        self.optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
         grads = self.grad()
-        self.tf_train = optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
+        self.tf_grads = grads
+        self.tf_train = self.optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
                                   global_step=tf.train.get_or_create_global_step())
 
     def _construct_action_prob(self):
@@ -335,19 +336,6 @@ class ReinforceLearner(object):
             regularization += tf.reduce_sum(tf.sqrt(weights))*weight_decay
         loss_value += regularization/len(self.agent.all_variables())
         return tf.gradients(loss_value, self.agent.all_variables())
-
-    def create_checkpoint(self, optimizer):
-        model_parameters = {}
-        if isinstance(self.agent, RLDILP):
-            model_parameters.update(self.agent.get_str2weights())
-        elif isinstance(self.agent, NeuralAgent):
-            model_parameters["actor"] = self.agent.model
-        else:
-            model_parameters = self.agent.get_str2weights()
-        root = tf.train.Checkpoint(optimizer=optimizer,
-                                   optimizer_step=tf.train.get_or_create_global_step(),
-                                   **model_parameters)
-        return root
 
     def sample_episode(self, sess):
         action_prob_history = []
@@ -390,26 +378,31 @@ class ReinforceLearner(object):
             with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar(name, scalar)
 
-    def train(self, steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp"):
-        losses = []
-        if optimizer == "RMSProp":
-            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
-        else:
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        if name:
-            checkpoint_dir = "./model/" + name
-            checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
-            checkpoint = self.create_checkpoint(optimizer)
-            try:
-                checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
-            except Exception as e:
-                print(e)
-            self.summary_writer = tf.contrib.summary.create_file_writer("./model/" + name, flush_millis=10000)
-        else:
-            self.summary_writer = None
+    def summary_histogram(self, name, data):
+        if self.summary_writer:
+            with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
+                tf.contrib.summary.histogram(name, data)
 
+    def train(self, steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp"):
+        saver = tf.train.Saver()
         with tf.Session() as sess:
+            losses = []
             sess.run([tf.initializers.global_variables()])
+            if name:
+                try:
+                    saver.restore(sess, "./model/"+name+"/parameters.ckpt")
+                except Exception as e:
+                    print(e)
+                self.summary_writer = tf.contrib.summary.create_file_writer("./model/"+name, flush_millis=10000)
+            else:
+                self.summary_writer = None
+            self.summary_scalar("returns", self.tf_returns[0])
+            self.summary_scalar("loss", self.tf_loss)
+            self.summary_histogram("weights", tf.concat(self.agent.all_variables(), axis=0))
+                # model definition code goes here
+                # and in it call
+            with self.summary_writer.as_default():
+                tf.contrib.summary.initialize(graph=tf.get_default_graph(), session=sess)
             for i in range(steps):
                 if batched:
                     reward_history, action_history, action_prob_history, state_history, valuation_history, valuation_index_history = \
@@ -419,10 +412,12 @@ class ReinforceLearner(object):
                     log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])
                                                                   for action_index in action_history]}
                     #loss_value += 1.0*excess
-                    sess.run([self.tf_train], {self.tf_returns:np.array(returns), self.tf_additional_discount:np.array(additional_discount),
+                    _, grads, _ = sess.run([self.tf_train, self.tf_grads, tf.contrib.summary.all_summary_ops()],
+                                        {self.tf_returns:np.array(returns), self.tf_additional_discount:np.array(additional_discount),
                                                self.tf_action_index:np.array(action_history),
                                                self.tf_valuation_index: np.array(valuation_index_history),
                                                self.agent.tf_input_valuation: np.array(valuation_history)})
+
                 else:
                     reward_history, action_history, action_prob_history, state_history, excess\
                         = self.sample_episode()
@@ -443,15 +438,14 @@ class ReinforceLearner(object):
                         grads = tape.gradient(loss_value, self.agent.all_variables())
                         optimizer.apply_gradients(zip(grads, self.agent.all_variables()),
                                           global_step=tf.train.get_or_create_global_step())
-                self.summary_scalar("return", returns[0])
 
                 print("-"*20)
                 print("step "+str(i)+"return is "+str(log["return"]))
-                if i%5==0:
+                if i%10==0:
                     self.agent.log(sess)
                     pprint(log)
                     if name:
-                        checkpoint.save(checkpoint_prefix)
+                        saver.save(sess, "./model/" + name + "/parameters.ckpt")
                         pd.Series(np.array(losses)).to_csv(name+".csv")
                 print("-"*20+"\n")
         return log["return"]

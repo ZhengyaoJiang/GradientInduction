@@ -78,10 +78,12 @@ def setup_cliffwalking(invented=False):
 
 def setup_unstack():
     env = Unstack()
-    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
-    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    maintemp = [RuleTemplate(1, True)]
+    inventedtemp = [RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    program_temp = ProgramTemplate([invented], {invented:inventedtemp, MOVE:maintemp}, 3)
+    invented2 = Predicate("invented2", 1)
+    program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
+                                                           invented2:inventedtemp}, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -90,12 +92,22 @@ def setup_stack():
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    program_temp = ProgramTemplate([invented], {invented:inventedtemp, MOVE:maintemp}, 3)
+    invented2 = Predicate("invented2", 2)
+    program_temp = ProgramTemplate([invented, invented2],
+                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 
-
-
+def setup_on():
+    env = On(random_initial_state())
+    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    invented = Predicate("invented", 2)
+    invented2 = Predicate("invented2", 1)
+    program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
+                                                           invented2:inventedtemp}, 4)
+    man = RulesManager(env.language, program_temp)
+    return man, env
 
 #@ray.remote
 def start_DILP(task, name):
@@ -117,13 +129,19 @@ def start_DILP(task, name):
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.5)
+        learner = ReinforceLearner(agent, env, 0.02)
     elif task == "stack":
         man, env = setup_stack()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.1)
+        learner = ReinforceLearner(agent, env, 0.02)
+    elif task == "on":
+        man, env = setup_on()
+        agent = RLDILP(man, env, state_encoding="atoms")
+        # critic = NeuralCritic([10,10], len(env.state))
+        # learner = PPOLearner(agent, env, critic)
+        learner = ReinforceLearner(agent, env, 0.02)
     else:
         raise ValueError()
     return learner.train(steps=6000, name=name)[-1]
@@ -184,6 +202,6 @@ if __name__ == "__main__":
     #start_NTP("predecessor", "predecessor"+"21")
     with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
-        start_DILP("unstack", None)
+        start_DILP("on", "on03")
         #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

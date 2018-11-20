@@ -14,7 +14,7 @@ class SymbolicEnvironment(object):
         :param negative: list of atoms, negative instances
         '''
         self.background = background
-        self.state = initial_state
+        self._state = initial_state
         self.initial_state = copy.deepcopy(initial_state)
         self.actions = actions
         self.acc_reward = 0
@@ -23,7 +23,7 @@ class SymbolicEnvironment(object):
     def reset(self):
         self.acc_reward = 0
         self.step = 0
-        self.state = copy.deepcopy(self.initial_state)
+        self._state = copy.deepcopy(self.initial_state)
 
 
 UP = Predicate("up",2)
@@ -76,19 +76,19 @@ class CliffWalking(SymbolicEnvironment):
         return len(self.actions)
 
     def next_step(self, action):
-        x = int(self.state[0])
-        y = int(self.state[1])
+        x = int(self._state[0])
+        y = int(self._state[1])
         self.step+=1
         reward, finished = self.get_reward()
         self.acc_reward += reward
         if action == UP and y<WIDTH-1:
-            self.state = (str(x), str(y+1))
+            self._state = (str(x), str(y+1))
         elif action == DOWN and y>0:
-            self.state = (str(x), str(y-1))
+            self._state = (str(x), str(y-1))
         elif action == LEFT and x>0:
-            self.state = (str(x-1), str(y))
+            self._state = (str(x-1), str(y))
         elif action == RIGHT and x<WIDTH-1:
-            self.state = (str(x+1), str(y))
+            self._state = (str(x+1), str(y))
         return reward, finished
 
     def get_reward(self):
@@ -97,9 +97,9 @@ class CliffWalking(SymbolicEnvironment):
         :return: reward value, and whether an episode is finished
         """
         for atom in self.background+self.unseen_background:
-            if atom.predicate == GOAL and tuple(atom.terms) == self.state:
+            if atom.predicate == GOAL and tuple(atom.terms) == self._state:
                 return 10.0, True
-            elif atom.predicate == CLIFF and tuple(atom.terms) == self.state:
+            elif atom.predicate == CLIFF and tuple(atom.terms) == self._state:
                 return -10.0, True
             elif self.step>=self.max_step:
                 return -10.0, True
@@ -123,8 +123,13 @@ class BlockWorld(SymbolicEnvironment):
         super(BlockWorld, self).__init__(list(background), initial_state, actions)
         self.max_step = 50
 
+
     def clean_empty_stack(self):
-        self.state = [stack for stack in self.state if stack]
+        self._state = [stack for stack in self._state if stack]
+
+    @property
+    def state(self):
+        return tuple([tuple(stack) for stack in self._state])
 
     def next_step(self, action):
         """
@@ -138,18 +143,18 @@ class BlockWorld(SymbolicEnvironment):
 
         self.clean_empty_stack()
         block1, block2 = action.terms
-        for stack1 in self.state:
+        for stack1 in self._state:
             if stack1[-1] == block1:
-                for stack2 in self.state:
+                for stack2 in self._state:
                     if stack2[-1] == block2:
                         del stack1[-1]
                         stack2.append(block1)
                         return reward, finished
         if block2 == "floor":
-            for stack1 in self.state:
+            for stack1 in self._state:
                 if stack1[-1] == block1 and len(stack1)>1:
                     del stack1[-1]
-                    self.state.append([block1])
+                    self._state.append([block1])
                     return reward, finished
         return reward, finished
 
@@ -175,7 +180,7 @@ class Unstack(BlockWorld):
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
-        for stack in self.state:
+        for stack in self._state:
             if len(stack) > 1:
                 return -0.02, False
         return 1.0, True
@@ -184,7 +189,7 @@ class Stack(BlockWorld):
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
-        for stack in self.state:
+        for stack in self._state:
             if len(stack) == BLOCK_N:
                 return 1.0, True
         return -0.02, False
@@ -198,7 +203,7 @@ class On(BlockWorld):
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
-        if Atom(ON, self.goal_state.terms) in self.state2atoms(self.state):
+        if Atom(ON, self.goal_state.terms) in self.state2atoms(self._state):
             return 1.0, True
         return -0.02, False
 

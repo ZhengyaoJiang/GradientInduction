@@ -4,6 +4,7 @@ from core.ilp import *
 import ray
 from core.rules import *
 from core.induction import *
+from core.rl import *
 from core.clause import str2atom,str2clause
 from core.NTP import NeuralProver, RLProver, SymbolicNeuralProver
 from core.symbolicEnvironment import *
@@ -94,12 +95,12 @@ def setup_stack():
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 2)
     program_temp = ProgramTemplate([invented, invented2],
-                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 3)
+                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
 
 def setup_on():
-    env = On(random_initial_state())
+    env = On()
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
@@ -135,13 +136,15 @@ def start_DILP(task, name):
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.02)
+        critic = TableCritic(1.0)
+        learner = ReinforceLearner(agent, env, 0.5, critic=critic)
     elif task == "on":
         man, env = setup_on()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.02)
+        critic = TableCritic(1.0)
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic)
     else:
         raise ValueError()
     return learner.train(steps=6000, name=name)[-1]
@@ -202,6 +205,6 @@ if __name__ == "__main__":
     #start_NTP("predecessor", "predecessor"+"21")
     with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
-        start_DILP("on", "on03")
+        start_DILP("on", "on08")
         #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

@@ -1,4 +1,5 @@
 from core.setup import *
+from core.hypertune import run
 
 #@ray.remote
 def start_DILP(task, name):
@@ -14,20 +15,23 @@ def start_DILP(task, name):
         agent = RLDILP(man, env)
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.1)
+        learner = ReinforceLearner(agent, env, 0.1,
+                                   batched=True, steps=6000, name=name)
     elif task == "unstack":
         man, env = setup_unstack()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.02)
+        learner = ReinforceLearner(agent, env, 0.02,
+                                   batched=True, steps=6000, name=name)
     elif task == "stack":
         man, env = setup_stack()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
         critic = TableCritic(1.0)
-        learner = ReinforceLearner(agent, env, 0.5, critic=critic)
+        learner = ReinforceLearner(agent, env, 0.5, critic=critic,
+                                   batched=True, steps=6000, name=name)
     elif task == "on":
         man, env = setup_on()
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -35,10 +39,11 @@ def start_DILP(task, name):
         # learner = PPOLearner(agent, env, critic)
         # critic = None
         critic = TableCritic(1.0)
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic)
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
+                                   batched=True, steps=6000, name=name)
     else:
         raise ValueError()
-    return learner.train(batched=True, steps=6000, name=name)[-1]
+    return learner.train()[-1]
 
 def start_NN(task, name=None):
     if task == "cliffwalking":
@@ -94,8 +99,9 @@ if __name__ == "__main__":
     #ray.init()
     #print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")
-    with tf.device("cpu"):
+    run("on")
+    #with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
-        start_DILP("on", "on13")
+        #start_DILP("on", "on16")
         #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

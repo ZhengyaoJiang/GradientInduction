@@ -4,7 +4,10 @@ from itertools import product
 from core.ilp import *
 from core.clause import *
 from collections import defaultdict
-from itertools import izip_longest
+try:
+    from itertools import izip_longest
+except Exception:
+    from itertools import zip_longest as izip_longest
 
 class RulesManager():
     def __init__(self, language_frame, program_template, independent_clause=True):

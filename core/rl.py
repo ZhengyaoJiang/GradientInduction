@@ -1,6 +1,7 @@
 from core.induction import *
 from core.NTP import *
 from copy import deepcopy
+import pickle
 
 class TableCritic(object):
     def __init__(self, discounting, learning_rate=0.1):
@@ -13,12 +14,23 @@ class TableCritic(object):
             self.learn(s, a, s2)
 
     def get_advantage(self, rewards, states):
-        values = np.array([self.__table[tuple(state)] for state in states] + [0.0])
+        values = np.array([self.__table[state] for state in states] + [0.0])
         return rewards - values[:-1] + self.__discounting*values[1:]
 
+    def get_values(self, states):
+        return np.array([self.__table[state] for state in states])
+
+    def save(self, path):
+        with open(path, "w") as fh:
+            pickle.dump(self.__table, fh)
+
+    def load(self, path):
+        with open(path) as fh:
+            self.__table = pickle.load(fh)
+
     def learn(self, state, reward, next_state):
-        state = tuple(state)
-        next_state = tuple(next_state)
+        state = state
+        next_state = next_state
         if state not in self.__table:
             self.__table[state] = 0
         if next_state not in self.__table:
@@ -28,7 +40,8 @@ class TableCritic(object):
 
 
 class ReinforceLearner(object):
-    def __init__(self, agent, enviornment, learning_rate, critic=None):
+    def __init__(self, agent, enviornment, learning_rate, critic=None,
+                 steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp"):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         self.env = enviornment
         self.agent = agent
@@ -36,6 +49,11 @@ class ReinforceLearner(object):
         self.learning_rate = learning_rate
         self._construct_train(learning_rate)
         self.critic=critic
+        self.total_steps = steps
+        self.name = name
+        self.discounting = discounting
+        self.batched = batched
+        self.optimizer = optimizer
 
     def _construct_train(self, learning_rate):
         self.tf_returns = tf.placeholder(shape=[None], dtype=tf.float32)
@@ -56,6 +74,7 @@ class ReinforceLearner(object):
         #                          global_step=tf.train.get_or_create_global_step())
         self.tf_train = self.optimizer.minimize(self.tf_loss, tf.train.get_or_create_global_step(),
                                                 var_list=self.agent.all_variables())
+        self.saver = tf.train.Saver()
 
     def _construct_action_prob(self):
         if self.state_encoding == "atoms":
@@ -125,72 +144,91 @@ class ReinforceLearner(object):
             with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.histogram(name, data)
 
-    def train(self, steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp"):
-        saver = tf.train.Saver()
-        with tf.Session() as sess:
-            losses = []
-            sess.run([tf.initializers.global_variables()])
-            if name:
+    def setup_train(self, sess, auto_load=True):
+        sess.run([tf.initializers.global_variables()])
+        if self.name:
+            if auto_load:
                 try:
-                    saver.restore(sess, "./model/"+name+"/parameters.ckpt")
+                    path = "./model/" + self.name
+                    self.load(sess, path)
                 except Exception as e:
                     print(e)
-                self.summary_writer = tf.contrib.summary.create_file_writer("./model/"+name, flush_millis=10000)
-            else:
-                self.summary_writer = None
+            self.summary_writer = tf.contrib.summary.create_file_writer("./model/"+self.name, flush_millis=10000)
             self.summary_scalar("returns", self.tf_returns[0])
             self.summary_histogram("advantages", self.tf_advantage)
             self.summary_scalar("loss", self.tf_loss)
             self.summary_histogram("weights", tf.concat(self.agent.all_variables(), axis=0))
-                # model definition code goes here
-                # and in it call
             with self.summary_writer.as_default():
                 tf.contrib.summary.initialize(graph=tf.get_default_graph(), session=sess)
-            for i in range(steps):
-                reward_history, action_history, action_prob_history, state_history, valuation_history, valuation_index_history = \
-                        self.sample_episode(sess)
-                returns = discount(reward_history, discounting)
-                if self.critic:
-                    self.critic.batch_learn(state_history, reward_history, state_history[1:]+["end"])
-                    advnatage = self.critic.get_advantage(reward_history, state_history)
-                else:
-                    advnatage = returns
-                additional_discount = np.cumprod(discounting*np.ones_like(advnatage))
-                log = {"return":returns[0], "action_history":[str(self.agent.all_actions[action_index])
-                                                                  for action_index in action_history]}
+        else:
+            self.summary_writer = None
+            # model definition code goes here
+            # and in it call
 
-                if batched:
-                    _, _ = sess.run([self.tf_train, tf.contrib.summary.all_summary_ops()],
-                                        {self.tf_advantage:np.array(advnatage), self.tf_additional_discount:np.array(additional_discount),
-                                         self.tf_returns:np.array(returns),
-                                         self.tf_action_index:np.array(action_history),
-                                         self.tf_valuation_index: np.array(valuation_index_history),
-                                         self.agent.tf_input_valuation: np.array(valuation_history)})
-                else:
-                    first = True
-                    for action_index, adv, acc_discount, val, val_index in zip(action_history, advnatage, additional_discount,
-                                                                  valuation_history,valuation_index_history):
-                        ops = [self.tf_train, self.tf_loss, self.tf_action_prob]
-                        if first == True:
-                            ops += [tf.contrib.summary.all_summary_ops()]
-                            first = False
-                        result = sess.run(ops, {self.tf_advantage: [adv],
-                                         self.tf_additional_discount: [acc_discount],
-                                       self.tf_returns: np.array(returns),
-                                       self.tf_action_index: [action_index],
-                                       self.tf_valuation_index: [val_index],
-                                       self.agent.tf_input_valuation: [val]})
+    def train_step(self, sess):
+        reward_history, action_history, action_prob_history, state_history, valuation_history, valuation_index_history = \
+                self.sample_episode(sess)
+        final_return = [np.sum(reward_history)]
+        returns = discount(reward_history, self.discounting)
+        if self.critic:
+            self.critic.batch_learn(state_history, reward_history, state_history[1:]+["end"])
+            advnatage = returns - self.critic.get_values(state_history)
+        else:
+            advnatage = returns
+        additional_discount = np.cumprod(self.discounting*np.ones_like(advnatage))
+        log = {"return":final_return[0], "action_history":[str(self.agent.all_actions[action_index])
+                                                          for action_index in action_history]}
+
+        if self.batched:
+            ops = [self.tf_train, tf.contrib.summary.all_summary_ops()] if self.name else [self.tf_train]
+            result = sess.run(ops,
+                                {self.tf_advantage:np.array(advnatage), self.tf_additional_discount:np.array(additional_discount),
+                                 self.tf_returns:final_return,
+                                 self.tf_action_index:np.array(action_history),
+                                 self.tf_valuation_index: np.array(valuation_index_history),
+                                 self.agent.tf_input_valuation: np.array(valuation_history)})
+        else:
+            first = True
+            for action_index, adv, acc_discount, val, val_index in zip(action_history, advnatage, additional_discount,
+                                                          valuation_history,valuation_index_history):
+                ops = [self.tf_train, self.tf_loss, self.tf_action_prob]
+                if first == True and self.name:
+                    ops += [tf.contrib.summary.all_summary_ops()]
+                    first = False
+                result = sess.run(ops, {self.tf_advantage: [adv],
+                                 self.tf_additional_discount: [acc_discount],
+                               self.tf_returns: final_return,
+                               self.tf_action_index: [action_index],
+                               self.tf_valuation_index: [val_index],
+                               self.agent.tf_input_valuation: [val]})
+        return log
+
+    def save(self, sess, path):
+        self.saver.save(sess, path + "/parameters.ckpt")
+        if self.critic:
+            self.critic.save(path + "/critic.pl")
+
+    def load(self, sess, path):
+        self.saver.restore(sess, path+"/parameters.ckpt")
+        if self.critic:
+            self.critic.load(path + "/critic.pl")
+
+    def train(self):
+        with tf.Session() as sess:
+            self.setup_train(sess)
+            for i in range(self.total_steps):
                         #print("advantage: {}".format(adv))
                         #print("action prob: {}".format(result[2][0][action_index]))
                         #print("loss value: {}".format(result[1]))
+                log = self.train_step(sess)
                 print("-"*20)
                 print("step "+str(i)+"return is "+str(log["return"]))
                 if i%10==0:
                     self.agent.log(sess)
+                    if self.name:
+                        path = "./model/" + self.name
+                        self.save(sess, path)
                     pprint(log)
-                    if name:
-                        saver.save(sess, "./model/" + name + "/parameters.ckpt")
-                        pd.Series(np.array(losses)).to_csv(name+".csv")
                 print("-"*20+"\n")
         return log["return"]
 

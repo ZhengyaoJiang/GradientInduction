@@ -2,7 +2,6 @@ from __future__ import print_function, division, absolute_import
 import numpy as np
 import tensorflow as tf
 from collections import OrderedDict
-from sklearn.utils.extmath import softmax
 import pandas as pd
 import tensorflow.contrib.eager as tfe
 import os
@@ -293,7 +292,9 @@ class RLDILP(BaseDILP):
             print(str(atom)+": "+str(value))
 
 
-
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 def prob_sum(x, y):
     return x + y - x*y

@@ -109,3 +109,15 @@ def setup_on():
                                                            invented2:inventedtemp}, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
+
+def setup_tictacteo():
+    env = TicTacTeo()
+    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    invented = Predicate("invented", 2)
+    invented2 = Predicate("invented2", 2)
+    program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, PLACE:maintemp,
+                                                           invented2:inventedtemp}, 3)
+    man = RulesManager(env.language, program_temp)
+    return man, env
+

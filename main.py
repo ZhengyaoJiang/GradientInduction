@@ -41,6 +41,12 @@ def start_DILP(task, name):
         critic = TableCritic(1.0)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
                                    batched=True, steps=6000, name=name)
+    elif task == "tictacteo":
+        man, env = setup_tictacteo()
+        agent = RLDILP(man, env, state_encoding="atoms")
+        critic = TableCritic(1.0)
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
+                                   batched=True, steps=12000, name=name)
     else:
         raise ValueError()
     return learner.train()[-1]
@@ -99,9 +105,10 @@ if __name__ == "__main__":
     #ray.init()
     #print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")
-    run("on")
-    #with tf.device("cpu"):
+    #run("on")
+    with tf.device("cpu"):
         #start_DILP("cliffwalking", "102000")
         #start_DILP("on", "on16")
+        start_DILP("tictacteo", "tic02")
         #start_NTP("cliffwalking", "NTPRL08")
         #start_NTP("predecessor", None)

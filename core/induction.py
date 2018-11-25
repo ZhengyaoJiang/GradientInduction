@@ -294,7 +294,7 @@ class RLDILP(BaseDILP):
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
-    return np.exp(x) / np.sum(np.exp(x), axis=0)
+    return np.exp(x) / np.sum(np.exp(x), axis=1)
 
 def prob_sum(x, y):
     return x + y - x*y

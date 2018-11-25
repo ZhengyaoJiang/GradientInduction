@@ -18,6 +18,8 @@ class TableCritic(object):
         return rewards - values[:-1] + self.__discounting*values[1:]
 
     def get_values(self, states):
+        for i,state in enumerate(states):
+            states[i] = totuple(state) if isinstance(state, np.ndarray) or isinstance(state, list) else state
         return np.array([self.__table[state] for state in states])
 
     def save(self, path):
@@ -29,8 +31,8 @@ class TableCritic(object):
             self.__table = pickle.load(fh)
 
     def learn(self, state, reward, next_state):
-        state = state
-        next_state = next_state
+        state = totuple(state) if isinstance(state, np.ndarray) or isinstance(state, list) else state
+        next_state = totuple(next_state) if isinstance(next_state, np.ndarray) or isinstance(next_state, list) else next_state
         if state not in self.__table:
             self.__table[state] = 0
         if next_state not in self.__table:
@@ -38,6 +40,11 @@ class TableCritic(object):
         predicated_value = reward + self.__discounting*self.__table[next_state]
         self.__table[state] += self.__learning_rate*(predicated_value-self.__table[state])
 
+def totuple(a):
+    try:
+        return tuple(totuple(i) for i in a)
+    except TypeError:
+        return a
 
 class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
@@ -223,7 +230,7 @@ class ReinforceLearner(object):
                 log = self.train_step(sess)
                 print("-"*20)
                 print("step "+str(i)+"return is "+str(log["return"]))
-                if i%10==0:
+                if i%100==0:
                     self.agent.log(sess)
                     if self.name:
                         path = "./model/" + self.name

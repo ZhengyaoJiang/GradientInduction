@@ -2,7 +2,7 @@ from __future__ import print_function, division, absolute_import
 from core.clause import *
 from core.ilp import LanguageFrame
 import copy
-from random import shuffle
+from random import shuffle, choice
 
 
 class SymbolicEnvironment(object):
@@ -216,4 +216,83 @@ def random_initial_state():
         result[stack_id].append(entity)
     return result
 
+
+PLACE = Predicate("place", 2)
+MINE = Predicate("mine", 2)
+EMPTY = Predicate("empty", 2)
+OPPONENT = Predicate("opponent", 2)
+class TicTacTeo(SymbolicEnvironment):
+    def __init__(self, width=3, know_valid_pos=True):
+        actions = [PLACE]
+        self.language = LanguageFrame(actions, extensional=[MINE, EMPTY, OPPONENT, SUCC],
+                                      constants=[str(i) for i in range(width)])
+        background = []
+        #background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
+        #                   for j in range(0, WIDTH) if i < j])
+        background.extend([Atom(SUCC, [str(i), str(i + 1)]) for i in range(width - 1)])
+        self.max_step = 50
+        initial_state = np.zeros([3,3])
+        super(TicTacTeo, self).__init__(background, initial_state, actions)
+        self.width = width
+        self.all_positions = [(i, j) for i in range(width) for j in range(width)]
+        self.know_valid_pos = know_valid_pos
+        self.action_n = len(self.all_positions)
+
+    def next_step(self, action):
+        def tuple2int(t):
+            return (int(t[0]), int(t[1]))
+        self.step += 1
+        valids = self.get_valid()
+        if tuple2int(action.terms) in valids:
+            self._state[tuple2int(action.terms)] = 1
+        reward, finished = self.get_reward()
+        if finished:
+            return reward, finished
+        self.random_move(self.know_valid_pos)
+        reward, finished = self.get_reward()
+        return reward, finished
+
+    def get_valid(self):
+        return [(x,y) for x,y in self.all_positions if self._state[x,y]==0]
+
+    def state2atoms(self, state):
+        atoms = set()
+        def tuple2strings(t):
+            return str(t[0]), str(t[1])
+        for position in self.all_positions:
+            if state[position] == 0:
+                atoms.add(Atom(EMPTY, tuple2strings(position)))
+            elif state[position] == -1:
+                atoms.add(Atom(OPPONENT, tuple2strings(position)))
+            elif state[position] == 1:
+                atoms.add(Atom(MINE, tuple2strings(position)))
+        return atoms
+
+    @property
+    def state(self):
+        return copy.deepcopy(self._state)
+
+    def random_move(self, know_valid=False):
+        valid_position = self.get_valid()
+        if know_valid and valid_position:
+            position = choice(valid_position)
+            self._state[position] = -1
+        else:
+            position = choice(self.all_positions)
+            if position in valid_position:
+                self._state[position] = -1
+
+    def get_reward(self):
+        if np.any(np.sum(self._state, axis=0)==3) or np.any(np.sum(self._state, axis=1)==3):
+            return 1, True
+        if np.any(np.sum(self._state, axis=0)==-3) or np.any(np.sum(self._state, axis=1)==-3):
+            return -1, True
+        for i in range(-self.width, self.width):
+            if np.trace(self._state, i)==3 or np.trace(np.flip(self._state, 0),i)==3:
+                return 1, True
+            if np.trace(self._state, i)==-3 or np.trace(np.flip(self._state, 0),i)==-3:
+                return -1, True
+        if not self.get_valid():
+            return 0, True
+        return 0, False
 

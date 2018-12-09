@@ -1,8 +1,9 @@
 from core.setup import *
 from core.hypertune import run
+import argparse
 
 #@ray.remote
-def start_DILP(task, name):
+def start_DILP(task, name, mode):
     import tensorflow as tf
     if task == "predecessor":
         man, ilp = setup_predecessor()
@@ -44,22 +45,55 @@ def start_DILP(task, name):
     elif task == "tictacteo":
         man, env = setup_tictacteo()
         agent = RLDILP(man, env, state_encoding="atoms")
-        critic = TableCritic(1.0)
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=12000, name=name)
+        discounting = 0.9
+        #critic = TableCritic(discounting, learning_rate=0.2)
+        critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.1, state2vector=env.state2vector)
+        #critic = None
+        learner = ReinforceLearner(agent, env, 0.02, critic=critic, discounting=discounting,
+                                   steps=120000, name=name)
     else:
         raise ValueError()
-    return learner.train()[-1]
+    if mode == "train":
+        return learner.train()[-1]
+    elif mode == "evaluate":
+        return learner.evaluate()
+    else:
+        raise ValueError()
 
-def start_NN(task, name=None):
+def start_NN(task, name, mode):
     if task == "cliffwalking":
         man, env = setup_cliffwalking()
-        agent = NeuralAgent([20,10], len(env.actions), len(env.state))
-        # critic = NeuralCritic([10,10], len(env.state))
-        critic = None
+        agent = NeuralAgent([20,10], env.action_n, env.state_dim)
+        # critic = TableCritic(1.0)
         #learner = PPOLearner(agent, env, critic=critic)
-        learner = ReinforceLearner(agent, env)
-    return learner.train(steps=6000, name=name, learning_rate=1e-3)[-1]
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+                                   steps=120000, name=name)
+    elif task == "stack":
+        man, env = setup_stack()
+        agent = NeuralAgent([20,10], env.action_n, env.state_dim)
+        critic = TableCritic(1.0)
+        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+                                   steps=120000, name=name)
+    elif task == "on":
+        man, env = setup_on()
+        agent = NeuralAgent([200,100], env.action_n, env.state_dim)
+        # critic = TableCritic(1.0)
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+                                   steps=120000, name=name)
+    elif task == "tictacteo":
+        man, env = setup_tictacteo()
+        agent = NeuralAgent([20,10], env.action_n, env.state_dim)
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.01, critic=critic, discounting=0.9,
+                                   steps=120000, name=name)
+    if mode == "train":
+        return learner.train()[-1]
+    elif mode == "evaluate":
+        return learner.evaluate()
+    else:
+        raise ValueError()
 
 #@ray.remote
 def start_NTP(task, name=None):
@@ -101,14 +135,25 @@ def start_NTP(task, name=None):
         final_loss = learner.train(steps=2000, name=name, learning_rate=0.001, optimizer="Adam")
     return final_loss
 
+
+
+from pprint import pprint
 if __name__ == "__main__":
     #ray.init()
     #print(ray.get([start_DILP.remote("predecessor", "e"+str(i)) for i in range(12)]))
     #start_NTP("predecessor", "predecessor"+"21")
     #run("on")
-    with tf.device("cpu"):
-        #start_DILP("cliffwalking", "102000")
-        #start_DILP("on", "on16")
-        start_DILP("tictacteo", "tic02")
-        #start_NTP("cliffwalking", "NTPRL08")
-        #start_NTP("predecessor", None)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode')
+    parser.add_argument('--task')
+    parser.add_argument('--algo')
+    parser.add_argument('--name', default=None)
+    args = parser.parse_args()
+    if args.algo == "DILP":
+        starter = start_DILP
+    elif args.algo == "NN":
+        starter = start_NN
+    else:
+        raise ValueError()
+    pprint(starter(args.task, args.name, args.mode))
+

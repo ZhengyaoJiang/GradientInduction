@@ -104,7 +104,7 @@ def setup_on():
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    invented2 = Predicate("invented2", 2)
+    invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
                                                            invented2:inventedtemp}, 4)
     man = RulesManager(env.language, program_temp)
@@ -115,9 +115,9 @@ def setup_tictacteo():
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    invented2 = Predicate("invented2", 2)
+    invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, PLACE:maintemp,
-                                                           invented2:inventedtemp}, 3)
+                                                           invented2:inventedtemp}, 2)
     man = RulesManager(env.language, program_temp)
     return man, env
 

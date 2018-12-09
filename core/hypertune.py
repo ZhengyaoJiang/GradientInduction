@@ -79,7 +79,7 @@ def run(task, name=None):
         hyperparam_mutations={
             # Allow for scaling-based perturbations, with a uniform backing
             # distribution for resampling.
-            "actor_learning_rate": lambda: random.uniform(0.01, 2.0),
+            "actor_learning_rate": lambda: random.uniform(0.01, 1.0),
             # Allow perturbations within this set of categorical values.
             "critic_learning_rate": lambda: random.uniform(0.01, 1.0),
             "discounting": [0.8, 0.9, 0.95, 1.0],

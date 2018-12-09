@@ -17,7 +17,8 @@ class BaseDILP(object):
         self.__init__rule_weights(scope_name)
         self.ground_atoms = rules_manager.all_grounds
         self.base_valuation = self.axioms2valuation(background)
-        self._construct_graph()
+        with tf.device("cpu"):
+            self._construct_graph()
 
     def _construct_graph(self):
         self.tf_input_valuation = tf.placeholder(shape=[None, self.base_valuation.shape[0]], dtype=tf.float32)

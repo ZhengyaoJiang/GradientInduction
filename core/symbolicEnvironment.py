@@ -56,10 +56,19 @@ class CliffWalking(SymbolicEnvironment):
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])
         super(CliffWalking, self).__init__(background, ("0","0"), actions)
         self.max_step = 50
+        self.state_dim = 2
+        self.all_actions = actions
 
     @property
     def all_states(self):
         return [(str(i), str(j)) for i in range(WIDTH) for j in range(WIDTH)]
+
+    def state2vector(self, state):
+        return np.array([float(state[0]), float(state[1])])
+
+    @property
+    def state(self):
+        return copy.deepcopy(self._state)
 
     def action_vec2symbol(self, action_vec):
         """
@@ -108,10 +117,11 @@ class CliffWalking(SymbolicEnvironment):
 ON = Predicate("on", 2)
 CLEAR = Predicate("clear", 1)
 MOVE = Predicate("move", 2)
-BLOCK_N = 4
-INI_STATE = [["a", "b", "c", "d"]]
+BLOCK_N = 6
+INI_STATE = [["a", "b", "c", "d", "e", "f"]]
 INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
 
+import string
 class BlockWorld(SymbolicEnvironment):
     """
     state is represented as a list of lists
@@ -122,10 +132,16 @@ class BlockWorld(SymbolicEnvironment):
                                       constants=sum(initial_state, [])+["floor"])
         super(BlockWorld, self).__init__(list(background), initial_state, actions)
         self.max_step = 50
-
+        self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6}
+        self.state_dim = BLOCK_N**3
+        self._all_blocks = list(string.ascii_lowercase)[:BLOCK_N]+["floor"]
 
     def clean_empty_stack(self):
         self._state = [stack for stack in self._state if stack]
+
+    @property
+    def all_actions(self):
+        return [Atom(MOVE, [a, b]) for a in self._all_blocks for b in self._all_blocks]
 
     @property
     def state(self):
@@ -143,6 +159,9 @@ class BlockWorld(SymbolicEnvironment):
 
         self.clean_empty_stack()
         block1, block2 = action.terms
+        if finished and reward<1:
+            self._state = [[]]
+            return reward, finished
         for stack1 in self._state:
             if stack1[-1] == block1:
                 for stack2 in self._state:
@@ -161,6 +180,13 @@ class BlockWorld(SymbolicEnvironment):
     @property
     def action_n(self):
         return (BLOCK_N+1)**2
+
+    def state2vector(self, state):
+        matrix = np.zeros([BLOCK_N, BLOCK_N, BLOCK_N])
+        for i, stack in enumerate(state):
+            for j, block in enumerate(stack):
+                matrix[i][j][self._block_encoding[block]-1] = 1.0
+        return matrix.flatten()
 
     def state2atoms(self, state):
         atoms = set()
@@ -202,7 +228,7 @@ class On(BlockWorld):
 
     def get_reward(self):
         if self.step >= self.max_step:
-            return -0.0, True
+            return 0.0, True
         if Atom(ON, self.goal_state.terms) in self.state2atoms(self._state):
             return 1.0, True
         return -0.02, False
@@ -224,12 +250,13 @@ OPPONENT = Predicate("opponent", 2)
 class TicTacTeo(SymbolicEnvironment):
     def __init__(self, width=3, know_valid_pos=True):
         actions = [PLACE]
-        self.language = LanguageFrame(actions, extensional=[MINE, EMPTY, OPPONENT, SUCC],
+        self.language = LanguageFrame(actions, extensional=[ZERO, MINE, EMPTY, OPPONENT, SUCC],
                                       constants=[str(i) for i in range(width)])
         background = []
         #background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
         #                   for j in range(0, WIDTH) if i < j])
         background.extend([Atom(SUCC, [str(i), str(i + 1)]) for i in range(width - 1)])
+        background.append(Atom(ZERO, ["0"]))
         self.max_step = 50
         initial_state = np.zeros([3,3])
         super(TicTacTeo, self).__init__(background, initial_state, actions)
@@ -237,23 +264,30 @@ class TicTacTeo(SymbolicEnvironment):
         self.all_positions = [(i, j) for i in range(width) for j in range(width)]
         self.know_valid_pos = know_valid_pos
         self.action_n = len(self.all_positions)
+        self.state_dim = width**2
 
     def next_step(self, action):
         def tuple2int(t):
             return (int(t[0]), int(t[1]))
         self.step += 1
-        valids = self.get_valid()
-        if tuple2int(action.terms) in valids:
-            self._state[tuple2int(action.terms)] = 1
         reward, finished = self.get_reward()
         if finished:
             return reward, finished
+        valids = self.get_valid()
+        if tuple2int(action.terms) in valids:
+            self._state[tuple2int(action.terms)] = 1
         self.random_move(self.know_valid_pos)
-        reward, finished = self.get_reward()
         return reward, finished
 
     def get_valid(self):
         return [(x,y) for x,y in self.all_positions if self._state[x,y]==0]
+
+    @property
+    def all_actions(self):
+        return [Atom(PLACE, [str(position[0]), str(position[1])]) for position in self.all_positions]
+
+    def state2vector(self, state):
+        return state.flatten()
 
     def state2atoms(self, state):
         atoms = set()
@@ -272,9 +306,11 @@ class TicTacTeo(SymbolicEnvironment):
     def state(self):
         return copy.deepcopy(self._state)
 
-    def random_move(self, know_valid=False):
+    def random_move(self, know_valid):
         valid_position = self.get_valid()
-        if know_valid and valid_position:
+        if not valid_position:
+            return
+        if know_valid:
             position = choice(valid_position)
             self._state[position] = -1
         else:
@@ -285,11 +321,12 @@ class TicTacTeo(SymbolicEnvironment):
     def get_reward(self):
         if np.any(np.sum(self._state, axis=0)==3) or np.any(np.sum(self._state, axis=1)==3):
             return 1, True
-        if np.any(np.sum(self._state, axis=0)==-3) or np.any(np.sum(self._state, axis=1)==-3):
-            return -1, True
         for i in range(-self.width, self.width):
             if np.trace(self._state, i)==3 or np.trace(np.flip(self._state, 0),i)==3:
                 return 1, True
+        if np.any(np.sum(self._state, axis=0)==-3) or np.any(np.sum(self._state, axis=1)==-3):
+            return -1, True
+        for i in range(-self.width, self.width):
             if np.trace(self._state, i)==-3 or np.trace(np.flip(self._state, 0),i)==-3:
                 return -1, True
         if not self.get_valid():

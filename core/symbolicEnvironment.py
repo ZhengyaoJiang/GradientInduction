@@ -35,17 +35,18 @@ ZERO = Predicate("zero",1)
 CLIFF = Predicate("cliff",2)
 SUCC = Predicate("succ",2)
 GOAL = Predicate("goal",2)
+CURRENT = Predicate("current", 2)
 WIDTH = 5
 
 class CliffWalking(SymbolicEnvironment):
     def __init__(self):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC],
+        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, CURRENT],
                                       constants=[str(i) for i in range(WIDTH)])
         background = []
         self.unseen_background = []
-        self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
         self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
+        self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
         #background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
@@ -77,12 +78,15 @@ class CliffWalking(SymbolicEnvironment):
         """
         return self.actions[np.argmax(action_vec)[0]]
 
-    def action_index2symbol(self, action_index):
-        return self.actions[action_index]
+    def action_index2atom(self, action_index):
+        return Atom(self.actions[action_index], ["-1", "-1"])
 
     @property
     def action_n(self):
         return len(self.actions)
+
+    def state2atoms(self, state):
+        return [Atom(CURRENT, state)]
 
     def next_step(self, action):
         x = int(self._state[0])
@@ -90,6 +94,8 @@ class CliffWalking(SymbolicEnvironment):
         self.step+=1
         reward, finished = self.get_reward()
         self.acc_reward += reward
+        if isinstance(action, Atom):
+            action = action.predicate
         if action == UP and y<WIDTH-1:
             self._state = (str(x), str(y+1))
         elif action == DOWN and y>0:
@@ -107,18 +113,18 @@ class CliffWalking(SymbolicEnvironment):
         """
         for atom in self.background+self.unseen_background:
             if atom.predicate == GOAL and tuple(atom.terms) == self._state:
-                return 10.0, True
+                return 1.0, True
             elif atom.predicate == CLIFF and tuple(atom.terms) == self._state:
-                return -10.0, True
+                return -1.0, True
             elif self.step>=self.max_step:
-                return -10.0, True
-        return -0.1, False
+                return -1.0, True
+        return -0.01, False
 
 ON = Predicate("on", 2)
 CLEAR = Predicate("clear", 1)
 MOVE = Predicate("move", 2)
-BLOCK_N = 6
-INI_STATE = [["a", "b", "c", "d", "e", "f"]]
+BLOCK_N = 4
+INI_STATE = [["a", "b", "c", "d"]]
 INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
 
 import string

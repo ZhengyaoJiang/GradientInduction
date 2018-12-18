@@ -344,10 +344,8 @@ class SymbolicNeuralProver(NeuralProver):
                     self.pair_dict[(p1, p2)] = i
                     i += 1
 
-
     def update_similarity(self):
         self.similarities = tf.nn.sigmoid(self.similarity_parameters)
-
 
     def batch_unify(self, heads, atoms, state):
         """

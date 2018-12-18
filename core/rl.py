@@ -20,7 +20,7 @@ class ReinforceLearner(object):
             self.type = "NN"
         self.env = enviornment
         self.agent = agent
-        self.state_encoding = self.agent.state_encoding
+        self.state_encoding = agent.state_encoding
         self.learning_rate = learning_rate
         self._construct_train(learning_rate)
         self.critic=critic
@@ -35,7 +35,7 @@ class ReinforceLearner(object):
         #self.tf_episode_n = tf.placeholder(shape=[])
         self.tf_advantage = tf.placeholder(shape=[None], dtype=tf.float32)
         self.tf_additional_discount = tf.placeholder(shape=[None], dtype=tf.float32)
-        self.tf_valuation_index = tf.placeholder(shape=[None, self.env.action_n], dtype=tf.int32)
+        self.tf_actions_valuation_indexes = tf.placeholder(shape=[None, self.env.action_n], dtype=tf.int32)
         self.tf_action_index = tf.placeholder(shape=[None], dtype=tf.int32)
         self._construct_action_prob()
         indexed_action_prob = tf.batch_gather(self.tf_action_prob, self.tf_action_index[:, None])[:, 0]
@@ -51,14 +51,17 @@ class ReinforceLearner(object):
                       *self.tf_advantage*self.tf_additional_discount)
 
     def _construct_action_prob(self):
-        if self.state_encoding == "atoms":
-            if self.type == "DILP":
-                action_eval = tf.batch_gather(self.agent.tf_result_valuation , self.tf_valuation_index)
-                sum_action_eval = tf.reduce_sum(action_eval)
-                action_prob = tf.where(sum_action_eval > 1.0,
-                                       action_eval / sum_action_eval,
-                                       action_eval + (1.0 - sum_action_eval) / self.env.action_n)
-                self.tf_action_prob = action_prob / tf.reduce_sum(action_prob)
+        """
+        this method implements the function $p_a$ in the paper
+        """
+        if self.type == "DILP":
+            # slice the action valuations from the valuation vectors
+            action_eval = tf.batch_gather(self.agent.tf_result_valuation, self.tf_actions_valuation_indexes)
+            sum_action_eval = tf.tile(tf.reduce_sum(action_eval, axis=1, keep_dims=True), [1, self.env.action_n])
+            action_prob = tf.where(sum_action_eval > 1.0,
+                                   action_eval / sum_action_eval,
+                                   action_eval + (1.0 - sum_action_eval) / float(self.env.action_n))
+            self.tf_action_prob = action_prob
         if self.type == "NN":
             self.tf_action_prob = self.agent.tf_output
 
@@ -87,13 +90,13 @@ class ReinforceLearner(object):
             step += 1
             if self.type == "DILP":
                 indexes = self.agent.get_valuation_indexes(self.env.state2atoms(self.env.state))
-                inputs = None
+                inputs = None # inputs are needed only for neural network models, so this is none
                 if self.state_encoding=="terms":
                     valuation = self.agent.base_valuation
                 else:
                     valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state2atoms(self.env.state))
                 action_prob,result = sess.run([self.tf_action_prob, self.agent.tf_result_valuation], feed_dict={self.agent.tf_input_valuation: [valuation],
-                                                                     self.tf_valuation_index: [indexes]})
+                                                                                                                self.tf_actions_valuation_indexes: [indexes]})
             elif self.type == "NN":
                 indexes = None
                 valuation = None
@@ -102,7 +105,7 @@ class ReinforceLearner(object):
             action_prob = action_prob[0]
             action_index = np.random.choice(range(self.env.action_n), p=action_prob)
             if self.state_encoding == "terms":
-                action = self.env.action_index2symbol(action_index)
+                action = self.env.action_index2atom(action_index)
             elif self.state_encoding == "atoms":
                 action = self.agent.all_actions[action_index]
             else:
@@ -175,11 +178,14 @@ class ReinforceLearner(object):
         returns = discount(reward_history, self.discounting)
         if self.critic:
             self.critic.batch_learn(state_history, reward_history, sess)
-            advnatage = returns - self.critic.get_values(state_history[:-1])
+            values = self.critic.get_values(state_history[:-1], sess).flatten()
+            #advantage = generalized_adv(reward_history, values, self.discounting)
+            advantage = returns - values
         else:
-            advnatage = returns
+            advantage = returns
         #additional_discount = np.cumprod(self.discounting*np.ones_like(advnatage))
-        additional_discount = np.ones_like(advnatage)
+        #advantage = normalize(advantage)
+        additional_discount = np.ones_like(advantage)
         if self.type == "DILP":
             log = {"return":final_return[0], "action_history":[str(self.agent.all_actions[action_index])
                                                           for action_index in action_history]}
@@ -190,14 +196,14 @@ class ReinforceLearner(object):
         if self.batched:
             ops = [self.tf_train, tf.contrib.summary.all_summary_ops()] if self.name else [self.tf_train]
             if self.type == "DILP":
-                feed_dict = {self.tf_advantage:np.array(advnatage),
+                feed_dict = {self.tf_advantage:np.array(advantage),
                              self.tf_additional_discount:np.array(additional_discount),
                                  self.tf_returns:final_return,
                                  self.tf_action_index:np.array(action_history),
-                                 self.tf_valuation_index: np.array(valuation_index_history),
+                                 self.tf_actions_valuation_indexes: np.array(valuation_index_history),
                                  self.agent.tf_input_valuation: np.array(valuation_history)}
             elif self.type == "NN":
-                feed_dict = {self.tf_advantage:np.array(advnatage),
+                feed_dict = {self.tf_advantage:np.array(advantage),
                              self.tf_additional_discount:np.array(additional_discount),
                              self.tf_returns:final_return,
                              self.tf_action_index:np.array(action_history),
@@ -205,7 +211,7 @@ class ReinforceLearner(object):
             result = sess.run(ops, feed_dict)
         else:
             first = True
-            for action_index, adv, acc_discount, val, val_index in zip(action_history, advnatage, additional_discount,
+            for action_index, adv, acc_discount, val, val_index in zip(action_history, advantage, additional_discount,
                                                           valuation_history,valuation_index_history):
                 ops = [self.tf_train, self.tf_loss, self.tf_action_prob]
                 if first == True and self.name:
@@ -215,7 +221,7 @@ class ReinforceLearner(object):
                                  self.tf_additional_discount: [acc_discount],
                                self.tf_returns: final_return,
                                self.tf_action_index: [action_index],
-                               self.tf_valuation_index: [val_index],
+                               self.tf_actions_valuation_indexes: [val_index],
                                self.agent.tf_input_valuation: [val]})
         return log
 
@@ -248,13 +254,13 @@ class ReinforceLearner(object):
 class PPOLearner(ReinforceLearner):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
                  steps=300, name=None, discounting=1.0, optimizer="RMSProp"):
+        self.epsilon = 0.2
+        self.tf_previoud_action_prob = tf.placeholder(tf.float32, shape=[None])
         super(PPOLearner, self).__init__(agent, enviornment, learning_rate, critic,
                                          steps, name, discounting, batched=True, optimizer="RMSProp")
-        self.epsilon = 0.1
-        self.tf_previoud_action_prob = tf.placeholder(tf.float32, shape=[None])
 
 
-    def actor_loss(self, new_prob):
+    def loss(self, new_prob):
         ratio = tf.clip_by_value(new_prob, 1e-5, 1.0) / self.tf_previoud_action_prob
         return -tf.reduce_sum(tf.minimum(ratio*self.tf_advantage,
                                           tf.clip_by_value(ratio, 1.-self.epsilon, 1.+self.epsilon)*
@@ -282,13 +288,13 @@ class PPOLearner(ReinforceLearner):
         for j in range(10):
             reward_history, action_history, action_prob_history, state_history, valuation_history,\
                 valuation_index_history, advantages, additional_discount = [], [], [], [], [], [], [], []
-            r, a, a_p, s, val, val_ind = self.sample_episode(sess)
+            r, a, a_p, s, val, val_ind, _ = self.sample_episode(sess)
             final_return = [] if j==0 else final_return+[sum(r)]
             rs = discount(r, self.discounting)
             a_dis = np.cumprod(self.discounting * np.ones_like(rs))
             if self.critic:
-                self.critic.batch_learn(s[:-1], r, s[1:])
-                advnatage = rs - self.critic.get_values(s[:-1])
+                self.critic.batch_learn(s, r, sess)
+                advnatage = rs - self.critic.get_values(s[:-1], sess).flatten()
             else:
                 advnatage = rs
             reward_history += r
@@ -307,13 +313,13 @@ class PPOLearner(ReinforceLearner):
 
         for j in range(10):
             if self.batched:
-                ops = [self.tf_train, tf.contrib.summary.all_summary_ops()] if self.name else [self.tf_train]
+                ops = [self.tf_train, tf.contrib.summary.all_summary_ops(), self.tf_loss] if self.name else [self.tf_train]
                 result = sess.run(ops,
                                 {self.tf_advantage:np.array(advnatages), self.tf_additional_discount:np.array(additional_discount),
                                  self.tf_returns:final_return,
                                  self.tf_previoud_action_prob:action_prob_history,
                                  self.tf_action_index:np.array(action_history),
-                                 self.tf_valuation_index: np.array(valuation_index_history),
+                                 self.tf_actions_valuation_indexes: np.array(valuation_index_history),
                                  self.agent.tf_input_valuation: np.array(valuation_history)})
             else:
                 first = True
@@ -328,7 +334,7 @@ class PPOLearner(ReinforceLearner):
                                 self.tf_previoud_action_prob:action_prob_history,
                                self.tf_returns: final_return,
                                self.tf_action_index: [action_index],
-                               self.tf_valuation_index: [val_index],
+                               self.tf_actions_valuation_indexes: [val_index],
                                self.agent.tf_input_valuation: [val]})
         return log
 
@@ -360,15 +366,20 @@ class NeuralAgent(object):
 
 
 class NeuralCritic(object):
-    def __init__(self, unit_list, state_size, discounting, learning_rate, state2vector):
+    def __init__(self, unit_list, state_size, discounting, learning_rate, state2vector,
+                 involve_steps=False):
         self.unit_list = unit_list
         self.state2vector = state2vector
         self.tf_input = tf.placeholder(dtype=tf.float32, shape=[None, state_size])
-        outputs = self.tf_input
+        self.tf_steps = tf.placeholder(dtype=tf.float32, shape=[None])
+        if involve_steps:
+            outputs = tf.concat([self.tf_input, self.tf_steps[:, np.newaxis]], axis=1)
+        else:
+            outputs = self.tf_input
         with tf.variable_scope("NN"):
             for unit_n in unit_list:
                 outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.relu)
-            outputs = tf.layers.dense(outputs, 1, activation=tf.nn.softmax)
+            outputs = tf.layers.dense(outputs, 1)
         self.tf_output = outputs
         self.state_encoding = "vector"
         self.discounting = discounting
@@ -389,21 +400,28 @@ class NeuralCritic(object):
 
     def batch_learn(self, states, rewards, sess):
         states = [self.state2vector(s) for s in states[:-1]]
-        sess.run([self.tf_train], feed_dict={self.tf_input:states, self.tf_reward: rewards})
+        sess.run([self.tf_train], feed_dict={self.tf_input:states, self.tf_reward: rewards,
+                                             self.tf_steps:np.array(range(0, len(states)),
+                                                                    dtype=np.float32)})
 
     def get_values(self, states, sess):
-        states = [self.state2vector(s) for s in states[:-1]]
-        return sess.run([self.tf_output], feed_dict={self.tf_input:states})[0]
+        states = [self.state2vector(s) for s in states]
+        return sess.run([self.tf_output], feed_dict={self.tf_input:np.array(states),
+                                                     self.tf_steps: np.array(range(0, len(states)), dtype=np.float32)})[0]
 
 class TableCritic(object):
-    def __init__(self, discounting, learning_rate=0.1):
+    def __init__(self, discounting, learning_rate=0.1, involve_steps=False):
         self.__table = {}
         self.__discounting = discounting
         self.__learning_rate = learning_rate
+        self.involve_steps = involve_steps
 
     def batch_learn(self, states, rewards, sess=None):
-        for s, a, s2 in zip(states[:-1], rewards, states[1:]):
-            self.learn(s, a, s2)
+        for s, a, s2, step in zip(states[:-1], rewards, states[1:], range(len(rewards))):
+            if self.involve_steps:
+                self.learn((s, step), a, (s2, step+1))
+            else:
+                self.learn(s, a, s2)
 
     def get_advantage(self, rewards, states):
         values = np.array([self.__table[state] for state in states] + [0.0])
@@ -412,7 +430,10 @@ class TableCritic(object):
     def get_values(self, states, sess=None):
         for i,state in enumerate(states):
             states[i] = totuple(state) if isinstance(state, np.ndarray) or isinstance(state, list) else state
-        return np.array([self.__table[state] for state in states])
+        if self.involve_steps:
+            return np.array([self.__table[(state, step)] for step,state in enumerate(states)])
+        else:
+            return np.array([self.__table[state] for step,state in enumerate(states)])
 
     def save(self, path):
         with open(path, "w") as fh:
@@ -433,14 +454,19 @@ class TableCritic(object):
         self.__table[state] += self.__learning_rate*(predicated_value-self.__table[state])
 
 
-def discount(r, discounting, normal=False):
+def discount(r, discounting):
     discounted_reward = np.zeros_like(r, dtype=np.float32)
     G = 0.0
     for i in reversed(range(0, len(r))):
         G = G * discounting + r[i]
         discounted_reward[i] = G
-    if normal:
-        mean = np.mean(discounted_reward)
-        std = np.std(discounted_reward)
-        discounted_reward = (discounted_reward - mean) / (std)
     return discounted_reward
+
+def normalize(scalars):
+    mean, std = np.mean(scalars), np.std(scalars)
+    return (scalars - mean)/std
+
+def generalized_adv(rewards, values, discounting, lam=0.9):
+    values[-1] = rewards[-1]
+    deltas = rewards[:-1] + discounting * values[1:] - values[:-1]
+    return np.concatenate([discount(deltas, discounting*lam), [0]], axis=0)

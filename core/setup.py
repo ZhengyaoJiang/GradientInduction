@@ -65,15 +65,23 @@ def setup_even():
     man = RulesManager(language, program_temp)
     return man, ilp
 
-def setup_cliffwalking(invented=False):
+def setup_cliffwalking(invented=True):
     env = CliffWalking()
+    temp1 = [RuleTemplate(1, False)]
+    temp2_main = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    temp2_invent = [RuleTemplate(1, False), RuleTemplate(1, True)]
     if invented:
-        temp = [RuleTemplate(1, False), RuleTemplate(1, True)]
-        invented = Predicate("invented", 2)
-        program_temp = ProgramTemplate([invented], {invented:temp, UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 2)
+        invented = Predicate("invented", 1)
+        invented2 = Predicate("invented2", 2)
+        program_temp = ProgramTemplate([invented2], {
+                                                    invented2: temp2_invent,
+                                                    UP: temp2_main,
+                                                    DOWN: temp2_main,
+                                                    LEFT: temp2_main,
+                                                    RIGHT: temp2_main},
+                                       2)
     else:
-        temp = [RuleTemplate(2, False)]
-        program_temp = ProgramTemplate([], {UP: temp, DOWN: temp, LEFT: temp, RIGHT: temp}, 1)
+        program_temp = ProgramTemplate([], {UP: temp1, DOWN: temp1, LEFT: temp1, RIGHT: temp1}, 1)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -84,7 +92,7 @@ def setup_unstack():
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
-                                                           invented2:inventedtemp}, 4)
+                                                           invented2:inventedtemp}, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -93,9 +101,9 @@ def setup_stack():
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    invented2 = Predicate("invented2", 2)
+    invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2],
-                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 4)
+                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -106,7 +114,7 @@ def setup_on():
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
-                                                           invented2:inventedtemp}, 4)
+                                                           invented2:inventedtemp}, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 
@@ -115,9 +123,13 @@ def setup_tictacteo():
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
-    invented2 = Predicate("invented2", 1)
-    program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, PLACE:maintemp,
-                                                           invented2:inventedtemp}, 2)
+    invented2 = Predicate("invented2", 2)
+    invented3 = Predicate("invented3", 1)
+    invented4 = Predicate("invented4", 1)
+    program_temp = ProgramTemplate([invented, invented3],
+                                   {invented:inventedtemp, PLACE:maintemp,
+                                    invented3:inventedtemp,
+                                    }, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 

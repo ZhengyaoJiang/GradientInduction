@@ -13,25 +13,28 @@ def start_DILP(task, name, mode):
         learner = SupervisedDILP(man, ilp, 0.5)
     elif task == "cliffwalking":
         man, env = setup_cliffwalking()
-        agent = RLDILP(man, env)
-        # critic = NeuralCritic([10,10], len(env.state))
-        # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.1,
+        agent = RLDILP(man, env, state_encoding="terms")
+        discounting = 1.0
+        critic = TableCritic(discounting=discounting, learning_rate=0.1, involve_steps=True)
+        # critic = None
+        # critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01,
+        #                      state2vector=env.state2vector, involve_steps=True)
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic, discounting=discounting,
                                    batched=True, steps=6000, name=name)
     elif task == "unstack":
         man, env = setup_unstack()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        learner = ReinforceLearner(agent, env, 0.02,
+        learner = ReinforceLearner(agent, env, 0.1,
                                    batched=True, steps=6000, name=name)
     elif task == "stack":
         man, env = setup_stack()
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
         # learner = PPOLearner(agent, env, critic)
-        critic = TableCritic(1.0)
-        learner = ReinforceLearner(agent, env, 0.5, critic=critic,
+        critic = TableCritic(discounting=1.0)
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
                                    batched=True, steps=6000, name=name)
     elif task == "on":
         man, env = setup_on()
@@ -47,10 +50,12 @@ def start_DILP(task, name, mode):
         agent = RLDILP(man, env, state_encoding="atoms")
         discounting = 0.9
         #critic = TableCritic(discounting, learning_rate=0.2)
-        critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.1, state2vector=env.state2vector)
-        #critic = None
+        critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.02, critic=critic, discounting=discounting,
                                    steps=120000, name=name)
+
+        #learner = PPOLearner(agent, env, 0.02, critic=critic, discounting=discounting,
+        #                           steps=120000, name=name)
     else:
         raise ValueError()
     if mode == "train":

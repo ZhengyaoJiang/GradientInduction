@@ -17,8 +17,7 @@ class BaseDILP(object):
         self.__init__rule_weights(scope_name)
         self.ground_atoms = rules_manager.all_grounds
         self.base_valuation = self.axioms2valuation(background)
-        with tf.device("cpu"):
-            self._construct_graph()
+        self._construct_graph()
 
     def _construct_graph(self):
         self.tf_input_valuation = tf.placeholder(shape=[None, self.base_valuation.shape[0]], dtype=tf.float32)
@@ -231,7 +230,7 @@ class SupervisedDILP(BaseDILP):
         return losses
 
 class RLDILP(BaseDILP):
-    def __init__(self, rules_manager, env, independent_clause=True, state_encoding="terms"):
+    def __init__(self, rules_manager, env, independent_clause=True, state_encoding="atoms"):
         super(RLDILP, self).__init__(rules_manager, env.background, independent_clause)
         self.env = env
         self.state_encoding=state_encoding
@@ -251,13 +250,13 @@ class RLDILP(BaseDILP):
     def get_valuation_indexes(self, state=None):
         """
         :param state: tuple of terms, if encoding is atoms it is not need to be feed
-        :return: action probabilities, difference between sum of action probabilities and 1
+        :return: the indexes of valuations of action atoms
         """
         atoms = self.valuation2atoms(self.base_valuation, -1).keys() #ordered
-        indexes = [None for _ in range(self.env.action_n)]
+        indexes = [None for _ in range(len(self.all_actions))]
         for i,atom in enumerate(atoms):
             if self.state_encoding == "terms":
-                if state == atom.terms and atom.predicate in self.env.actions:
+                if state[0].terms == atom.terms and atom.predicate in self.env.actions:
                     indexes[self.all_actions.index(atom.predicate)] = i
             else:
                 if atom in self.all_actions:

@@ -65,15 +65,18 @@ def setup_even():
     man = RulesManager(language, program_temp)
     return man, ilp
 
-def setup_cliffwalking(invented=True):
+def setup_cliffwalking(variation=None, invented=True):
     env = CliffWalking()
+    if variation:
+        env = env.vary(variation)
     temp1 = [RuleTemplate(1, False)]
-    temp2_main = [RuleTemplate(1, False), RuleTemplate(1, True)]
-    temp2_invent = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    temp2_main = [RuleTemplate(1, True)]
+    temp2_invent = [RuleTemplate(1, False)]
     if invented:
         invented = Predicate("invented", 1)
-        invented2 = Predicate("invented2", 2)
-        program_temp = ProgramTemplate([invented2], {
+        invented2 = Predicate("invented2", 1)
+        program_temp = ProgramTemplate([invented2, invented], {
+                                                    invented: temp2_invent,
                                                     invented2: temp2_invent,
                                                     UP: temp2_main,
                                                     DOWN: temp2_main,
@@ -85,21 +88,37 @@ def setup_cliffwalking(invented=True):
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_unstack():
+def setup_unstack(variation=None, templete="reduced"):
     env = Unstack()
-    maintemp = [RuleTemplate(1, True)]
-    inventedtemp = [RuleTemplate(1, True)]
+    if variation:
+        env = env.vary(variation)
+    if templete=="full":
+        maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    if templete=="reduced":
+        maintemp = [RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, True)]
+        inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, False)]
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
-    program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
-                                                           invented2:inventedtemp}, 3)
+    invented3 = Predicate("invented3", 1)
+    program_temp = ProgramTemplate([invented, invented2, invented3], {invented: inventedtemp2,
+                                                                      MOVE: maintemp,
+                                                                      invented3: inventedtemp,
+                                                                      invented2:inventedtemp}, 3)
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_stack():
+def setup_stack(variation=None, templete="full"):
     env = Stack(initial_state=INI_STATE2)
-    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
-    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    if variation:
+        env = env.vary(variation)
+    if templete=="full":
+        maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    if templete=="reduced":
+        maintemp = [RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2],
@@ -107,10 +126,16 @@ def setup_stack():
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_on():
+def setup_on(variation=None, templete="reduced"):
     env = On()
-    maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
-    inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    if variation:
+        env = env.vary(variation)
+    if templete=="full":
+        maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
+    if templete=="reduced":
+        maintemp = [RuleTemplate(1, True)]
+        inventedtemp = [RuleTemplate(1, True)]
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     program_temp = ProgramTemplate([invented, invented2], {invented:inventedtemp, MOVE:maintemp,
@@ -118,8 +143,10 @@ def setup_on():
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_tictacteo():
+def setup_tictacteo(variation=None):
     env = TicTacTeo()
+    if variation:
+        env = env.vary(variation)
     maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     invented = Predicate("invented", 2)

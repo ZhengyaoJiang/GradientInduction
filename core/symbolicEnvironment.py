@@ -32,6 +32,7 @@ LEFT = Predicate("left",2)
 RIGHT = Predicate("right",2)
 LESS = Predicate("less",2)
 ZERO = Predicate("zero",1)
+LAST = Predicate("last",1)
 CLIFF = Predicate("cliff",2)
 SUCC = Predicate("succ",2)
 GOAL = Predicate("goal",2)
@@ -41,13 +42,13 @@ WIDTH = 5
 class CliffWalking(SymbolicEnvironment):
     def __init__(self):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, CURRENT],
+        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, LAST],
                                       constants=[str(i) for i in range(WIDTH)])
         background = []
         self.unseen_background = []
         self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
-        #background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
+        background.append(Atom(LAST, [str(WIDTH-1)]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
                            for j in range(0, WIDTH) if i<j])
@@ -117,30 +118,36 @@ class CliffWalking(SymbolicEnvironment):
             elif atom.predicate == CLIFF and tuple(atom.terms) == self._state:
                 return -1.0, True
             elif self.step>=self.max_step:
-                return -1.0, True
-        return -0.01, False
+                return -0.0, True
+        return -0.02, False
 
 ON = Predicate("on", 2)
 CLEAR = Predicate("clear", 1)
 MOVE = Predicate("move", 2)
-BLOCK_N = 4
 INI_STATE = [["a", "b", "c", "d"]]
 INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
+FLOOR = Predicate("floor", 1)
+BLOCK = Predicate("block", 1)
 
 import string
 class BlockWorld(SymbolicEnvironment):
     """
     state is represented as a list of lists
     """
-    def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=()):
+    def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=(), block_n=4):
         actions = [MOVE]
-        self.language = LanguageFrame(actions, extensional=[ON, CLEAR]+list(additional_predicates),
+        self.language = LanguageFrame(actions, extensional=[ON, CLEAR, BLOCK, FLOOR]+list(additional_predicates),
                                       constants=sum(initial_state, [])+["floor"])
-        super(BlockWorld, self).__init__(list(background), initial_state, actions)
         self.max_step = 50
-        self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6}
-        self.state_dim = BLOCK_N**3
-        self._all_blocks = list(string.ascii_lowercase)[:BLOCK_N]+["floor"]
+        self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
+        self.state_dim = block_n**3
+        self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
+        self._additional_predicates = additional_predicates
+        background = list(background)
+        background.append(Atom(FLOOR, ["floor"]))
+        background.extend([Atom(BLOCK, [b]) for b in list(string.ascii_lowercase)[:block_n]])
+        super(BlockWorld, self).__init__(background, initial_state, actions)
+        self._block_n = block_n
 
     def clean_empty_stack(self):
         self._state = [stack for stack in self._state if stack]
@@ -185,10 +192,10 @@ class BlockWorld(SymbolicEnvironment):
 
     @property
     def action_n(self):
-        return (BLOCK_N+1)**2
+        return (self._block_n+1)**2
 
     def state2vector(self, state):
-        matrix = np.zeros([BLOCK_N, BLOCK_N, BLOCK_N])
+        matrix = np.zeros([self._block_n, self._block_n, self._block_n])
         for i, stack in enumerate(state):
             for j, block in enumerate(stack):
                 matrix[i][j][self._block_encoding[block]-1] = 1.0
@@ -209,6 +216,10 @@ class BlockWorld(SymbolicEnvironment):
         pass
 
 class Unstack(BlockWorld):
+    all_variations = ("shuffle top2","shuffle bottom2", "5blocks",
+                      "6blocks", "7blocks")
+    all_NN_variations = ("shuffle top2", "shuffle bottom2")
+
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
@@ -217,19 +228,67 @@ class Unstack(BlockWorld):
                 return -0.02, False
         return 1.0, True
 
+    def vary(self, type):
+        block_n = self._block_n
+        if type=="shuffle top2":
+            initial_state=[["a", "b", "d", "c"]]
+        elif type=="shuffle bottom2":
+            initial_state=[["b", "a", "c", "d"]]
+        elif type=="5blocks":
+            initial_state=[["a", "b", "c", "d", "e"]]
+            block_n = 5
+        elif type=="6blocks":
+            initial_state=[["a", "b", "c", "d", "e", "f"]]
+            block_n = 6
+        elif type=="7blocks":
+            initial_state=[["a", "b", "c", "d", "e", "f", "g"]]
+            block_n = 7
+        else:
+            raise ValueError
+        return Unstack(initial_state, self._additional_predicates, self.background, block_n)
+
+
 class Stack(BlockWorld):
+    all_variations = ("shuffle left2","shuffle right2", "5blocks",
+                      "6blocks", "7blocks")
+    all_NN_variations = ("shuffle left2", "shuffle right2")
+
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
         for stack in self._state:
-            if len(stack) == BLOCK_N:
+            if len(stack) == self._block_n:
                 return 1.0, True
         return -0.02, False
 
+    def vary(self, type):
+        block_n = self._block_n
+        if type=="shuffle right2":
+            initial_state=[["a"], ["b"], ["d"], ["c"]]
+        elif type=="shuffle left2":
+            initial_state=[["b"], ["a"], ["c"], ["d"]]
+        elif type=="5blocks":
+            initial_state=[["a"], ["b"], ["c"], ["d"], ["e"]]
+            block_n = 5
+        elif type=="6blocks":
+            initial_state=[["a"], ["b"], ["c"], ["d"], ["e"], ["f"]]
+            block_n = 6
+        elif type=="7blocks":
+            initial_state=[["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]]
+            block_n = 7
+        else:
+            raise ValueError
+        return Stack(initial_state, self._additional_predicates, self.background, block_n)
+
+
 GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
-    def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"])):
-        super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON], background=[goal_state])
+    all_variations = ("shuffle top2","shuffle middle2", "5blocks",
+                      "6blocks", "7blocks")
+    all_NN_variations = ("shuffle top2", "shuffle bottom2")
+    def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4):
+        super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],
+                                 background=[goal_state], block_n=block_n)
         self.goal_state = goal_state
 
     def get_reward(self):
@@ -239,15 +298,36 @@ class On(BlockWorld):
             return 1.0, True
         return -0.02, False
 
+    def vary(self, type):
+        block_n = self._block_n
+        if type=="shuffle top2":
+            initial_state=[["a", "b", "d", "c"]]
+        elif type=="shuffle middle2":
+            initial_state=[["a", "c", "b", "d"]]
+        elif type=="5blocks":
+            initial_state=[["a", "b", "c", "d", "e"]]
+            block_n = 5
+        elif type=="6blocks":
+            initial_state=[["a", "b", "c", "d", "e", "f"]]
+            block_n = 6
+        elif type=="7blocks":
+            initial_state=[["a", "b", "c", "d", "e", "f", "g"]]
+            block_n = 7
+        else:
+            raise ValueError
+        return On(initial_state, block_n=block_n)
+
+
+"""
 def random_initial_state():
-    result = [[] for _ in range(BLOCK_N)]
+    result = [[] for _ in range(self._block_n)]
     all_entities = ["a", "b", "c", "d", "e", "f", "g"][:BLOCK_N]
     shuffle(all_entities)
     for entity in all_entities:
         stack_id = np.random.randint(0, BLOCK_N)
         result[stack_id].append(entity)
     return result
-
+"""
 
 PLACE = Predicate("place", 2)
 MINE = Predicate("mine", 2)

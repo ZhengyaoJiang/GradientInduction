@@ -57,7 +57,7 @@ class ReinforceLearner(object):
         if self.type == "DILP":
             # slice the action valuations from the valuation vectors
             action_eval = tf.batch_gather(self.agent.tf_result_valuation, self.tf_actions_valuation_indexes)
-            sum_action_eval = tf.tile(tf.reduce_sum(action_eval, axis=1, keep_dims=True), [1, self.env.action_n])
+            sum_action_eval = tf.tile(tf.reduce_sum(action_eval, axis=1, keepdims=True), [1, self.env.action_n])
             action_prob = tf.where(sum_action_eval > 1.0,
                                    action_eval / sum_action_eval,
                                    action_eval + (1.0 - sum_action_eval) / float(self.env.action_n))
@@ -157,7 +157,7 @@ class ReinforceLearner(object):
             # model definition code goes here
             # and in it call
 
-    def evaluate(self, repeat=100):
+    def evaluate(self, repeat=200):
         results = []
         with tf.Session() as sess:
             self.setup_train(sess)

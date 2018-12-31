@@ -103,11 +103,11 @@ def setup_unstack(variation=None, templete="reduced"):
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     invented3 = Predicate("invented3", 1)
-    program_temp = ProgramTemplate([invented2, invented3, invented], {invented2: inventedtemp,
+    program_temp = ProgramTemplate([invented2, invented3, invented], {invented2: inventedtemp_2extential,
                                                            invented3: inventedtemp2,
                                                            invented: inventedtemp,
                                                            MOVE: maintemp,
-                                                           }, 3)
+                                                           }, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
 

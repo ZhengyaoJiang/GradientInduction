@@ -37,6 +37,8 @@ def generalized_test(task, name, algo):
 
 #@ray.remote
 def start_DILP(task, name, mode, variation=None):
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     if task == "predecessor":
         man, ilp = setup_predecessor()
         learner = SupervisedDILP(man, ilp, 0.5)
@@ -63,9 +65,9 @@ def start_DILP(task, name, mode, variation=None):
         else:
             # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
             critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-            #critic = None
+            # critic = None
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=6000, name=name)
+                                   batched=True, steps=15000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")

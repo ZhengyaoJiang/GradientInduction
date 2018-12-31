@@ -1,6 +1,7 @@
 from core.induction import *
 from core.NTP import *
 from copy import deepcopy
+from collections import namedtuple
 import pickle
 
 
@@ -9,6 +10,9 @@ def totuple(a):
         return tuple(totuple(i) for i in a)
     except TypeError:
         return a
+
+Episode = namedtuple("Episode", ["reward_history", "action_history", "action_trajectory_prob", "state_history",
+               "valuation_history", "valuation_index_history", "input_vector_history", "returns", "steps", "final_return"])
 
 class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
@@ -85,9 +89,9 @@ class ReinforceLearner(object):
         input_vector_history = []
         excesses = []
         valuation_index_history = []
+        steps = []
         step = 0
         while step<max_steps:
-            step += 1
             if self.type == "DILP":
                 indexes = self.agent.get_valuation_indexes(self.env.state2atoms(self.env.state))
                 inputs = None # inputs are needed only for neural network models, so this is none
@@ -110,6 +114,7 @@ class ReinforceLearner(object):
                 action = self.agent.all_actions[action_index]
             else:
                 action = self.env.all_actions[action_index]
+            steps.append(step)
             state_history.append(self.env.state)
             reward, finished = self.env.next_step(action)
             reward_history.append(reward)
@@ -118,12 +123,40 @@ class ReinforceLearner(object):
             valuation_history.append(valuation)
             valuation_index_history.append(indexes)
             input_vector_history.append(inputs)
+            step += 1
             if finished:
                 self.env.reset()
                 break
-        state_history.append("end")
-        return reward_history, action_history, action_trajectory_prob, state_history,\
-               valuation_history, valuation_index_history, input_vector_history
+        final_return = [np.sum(reward_history)]
+        returns = discount(reward_history, self.discounting)
+        if self.critic:
+            self.critic.batch_learn(state_history, reward_history, sess)
+        return Episode(reward_history, action_history, action_trajectory_prob, state_history,
+               valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return)
+
+    def get_minibatch_buffer(self, sess, batch_size=20):
+        episode_buffer = [[] for _ in range(9)]
+        sample_related_indexes = range(9)
+
+        def dump_episode2buffer(episode):
+            for i in sample_related_indexes:
+                episode_buffer[i].extend(episode[i])
+
+        def split_buffer(raw_buffer, index):
+            result = []
+            new_buffer = []
+            for l in raw_buffer:
+                result.append(l[:index])
+                new_buffer.append(l[index:])
+            return result, new_buffer
+
+        while True:
+            while len(episode_buffer[0]) < batch_size:
+                e = self.sample_episode(sess)
+                dump_episode2buffer(e)
+                final_return = e.final_return
+            result, episode_buffer = split_buffer(episode_buffer, batch_size)
+            yield Episode(*(result+[final_return]))
 
 
     def summary_scalar(self, name, scalar):
@@ -162,9 +195,9 @@ class ReinforceLearner(object):
         with tf.Session() as sess:
             self.setup_train(sess)
             for _ in range(repeat):
+                e = self.sample_episode(sess)
                 reward_history, action_history, action_prob_history, state_history, \
-                    valuation_history, valuation_index_history, input_vector_history = self.sample_episode(sess)
-                final_return = [np.sum(reward_history)]
+                valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return = e
                 results.append(final_return)
         unique, counts = np.unique(results, return_counts=True)
         distribution =  dict(zip(unique, counts))
@@ -172,13 +205,11 @@ class ReinforceLearner(object):
                 "min": np.min(results), "max": np.max(results)}
 
     def train_step(self, sess):
+        e = self.minibatch_buffer.next()
         reward_history, action_history, action_prob_history, state_history,\
-            valuation_history, valuation_index_history, input_vector_history = self.sample_episode(sess)
-        final_return = [np.sum(reward_history)]
-        returns = discount(reward_history, self.discounting)
+            valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return = e
         if self.critic:
-            self.critic.batch_learn(state_history, reward_history, sess)
-            values = self.critic.get_values(state_history[:-1], sess).flatten()
+            values = self.critic.get_values(state_history, sess, steps).flatten()
             #advantage = generalized_adv(reward_history, values, self.discounting)
             advantage = returns - values
         else:
@@ -238,6 +269,7 @@ class ReinforceLearner(object):
     def train(self):
         with tf.Session() as sess:
             self.setup_train(sess)
+            self.minibatch_buffer = self.get_minibatch_buffer(sess)
             for i in range(self.total_steps):
                 log = self.train_step(sess)
                 print("-"*20)
@@ -294,7 +326,7 @@ class PPOLearner(ReinforceLearner):
             a_dis = np.cumprod(self.discounting * np.ones_like(rs))
             if self.critic:
                 self.critic.batch_learn(s, r, sess)
-                advnatage = rs - self.critic.get_values(s[:-1], sess).flatten()
+                advnatage = rs - self.critic.get_values(s, sess).flatten()
             else:
                 advnatage = rs
             reward_history += r
@@ -380,6 +412,7 @@ class NeuralCritic(object):
             for unit_n in unit_list:
                 outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.relu)
             outputs = tf.layers.dense(outputs, 1)
+        self.involve_steps = involve_steps
         self.tf_output = outputs
         self.state_encoding = "vector"
         self.discounting = discounting
@@ -399,15 +432,18 @@ class NeuralCritic(object):
         pass
 
     def batch_learn(self, states, rewards, sess):
-        states = [self.state2vector(s) for s in states[:-1]]
+        states = [self.state2vector(s) for s in states]
         sess.run([self.tf_train], feed_dict={self.tf_input:states, self.tf_reward: rewards,
                                              self.tf_steps:np.array(range(0, len(states)),
                                                                     dtype=np.float32)})
 
-    def get_values(self, states, sess):
+    def get_values(self, states, sess, steps=None):
         states = [self.state2vector(s) for s in states]
-        return sess.run([self.tf_output], feed_dict={self.tf_input:np.array(states),
-                                                     self.tf_steps: np.array(range(0, len(states)), dtype=np.float32)})[0]
+        if self.involve_steps:
+            return sess.run([self.tf_output], feed_dict={self.tf_input:np.array(states),
+                                                     self.tf_steps: np.array(steps, dtype=np.float32)})[0]
+        else:
+            return sess.run([self.tf_output], feed_dict={self.tf_input:np.array(states)})[0]
 
 class TableCritic(object):
     def __init__(self, discounting, learning_rate=0.1, involve_steps=False):
@@ -417,21 +453,17 @@ class TableCritic(object):
         self.involve_steps = involve_steps
 
     def batch_learn(self, states, rewards, sess=None):
-        for s, a, s2, step in zip(states[:-1], rewards, states[1:], range(len(rewards))):
+        for s, a, s2, step in zip(states, rewards, states[1:]+["end"], range(len(rewards))):
             if self.involve_steps:
                 self.learn((s, step), a, (s2, step+1))
             else:
                 self.learn(s, a, s2)
 
-    def get_advantage(self, rewards, states):
-        values = np.array([self.__table[state] for state in states] + [0.0])
-        return rewards - values[:-1] + self.__discounting*values[1:]
-
-    def get_values(self, states, sess=None):
+    def get_values(self, states, sess=None, steps=None):
         for i,state in enumerate(states):
             states[i] = totuple(state) if isinstance(state, np.ndarray) or isinstance(state, list) else state
         if self.involve_steps:
-            return np.array([self.__table[(state, step)] for step,state in enumerate(states)])
+            return np.array([self.__table[(state, step)] for step,state in zip(steps, states)])
         else:
             return np.array([self.__table[state] for step,state in enumerate(states)])
 

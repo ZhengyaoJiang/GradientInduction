@@ -96,16 +96,17 @@ def setup_unstack(variation=None, templete="reduced"):
         maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
         inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     if templete=="reduced":
-        maintemp = [RuleTemplate(0, True), RuleTemplate(1, True)]
+        maintemp = [RuleTemplate(0, True)]
         inventedtemp = [RuleTemplate(1, True)]
         inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, False)]
         inventedtemp_2extential = [RuleTemplate(2, False)]
     invented = Predicate("invented", 2)
     invented2 = Predicate("invented2", 1)
     invented3 = Predicate("invented3", 1)
-    program_temp = ProgramTemplate([invented2, invented3, invented], {invented2: inventedtemp,
-                                                           invented3: inventedtemp2,
-                                                           invented: inventedtemp,
+    program_temp = ProgramTemplate([invented, invented2, invented3],
+                                                          {invented: inventedtemp2,
+                                                           invented3: inventedtemp,
+                                                           invented2: inventedtemp,
                                                            MOVE: maintemp,
                                                            }, 3)
     man = RulesManager(env.language, program_temp)

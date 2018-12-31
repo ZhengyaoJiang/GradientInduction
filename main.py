@@ -37,6 +37,8 @@ def generalized_test(task, name, algo):
 
 #@ray.remote
 def start_DILP(task, name, mode, variation=None):
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     if task == "predecessor":
         man, ilp = setup_predecessor()
         learner = SupervisedDILP(man, ilp, 0.5)
@@ -52,7 +54,7 @@ def start_DILP(task, name, mode, variation=None):
         # critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01,
         #                      state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic, discounting=discounting,
-                                   batched=True, steps=6000, name=name)
+                                   batched=True, steps=12000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -65,7 +67,7 @@ def start_DILP(task, name, mode, variation=None):
             critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
             #critic = None
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=6000, name=name)
+                                   batched=True, steps=12000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -77,7 +79,7 @@ def start_DILP(task, name, mode, variation=None):
         else:
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=6000, name=name)
+                                   batched=True, steps=12000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -89,7 +91,7 @@ def start_DILP(task, name, mode, variation=None):
         else:
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=6000, name=name)
+                                   batched=True, steps=12000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
         agent = RLDILP(man, env, state_encoding="atoms")

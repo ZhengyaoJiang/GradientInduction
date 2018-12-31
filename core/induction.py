@@ -97,7 +97,7 @@ class BaseDILP(object):
         # deduction_matrices = self.rules_manager.deducation_matrices[predicate]
         for predicate, matrix in self.rules_manager.deduction_matrices.items():
             deduced_valuation += BaseDILP.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
-        return deduced_valuation+valuation - deduced_valuation*valuation
+        return deduced_valuation+self.base_valuation[:, None]
 
     @staticmethod
     def inference_single_predicate(valuation, deduction_matrices, rule_weights):

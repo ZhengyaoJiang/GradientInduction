@@ -47,8 +47,8 @@ class ReinforceLearner(object):
         self.saver = tf.train.Saver()
 
     def loss(self, indexed_action_prob):
-        return -tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))\
-                      *self.tf_advantage*self.tf_additional_discount)
+        return (-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))
+               )*self.tf_advantage*self.tf_additional_discount)
 
     def _construct_action_prob(self):
         """

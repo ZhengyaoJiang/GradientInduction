@@ -134,7 +134,7 @@ class ReinforceLearner(object):
         return Episode(reward_history, action_history, action_trajectory_prob, state_history,
                valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return)
 
-    def get_minibatch_buffer(self, sess, batch_size=20):
+    def get_minibatch_buffer(self, sess, batch_size=5):
         episode_buffer = [[] for _ in range(9)]
         sample_related_indexes = range(9)
 

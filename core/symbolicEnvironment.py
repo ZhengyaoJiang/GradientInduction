@@ -122,7 +122,7 @@ class CliffWalking(SymbolicEnvironment):
         return -0.02, False
 
 ON = Predicate("on", 2)
-CLEAR = Predicate("clear", 1)
+TOP = Predicate("top", 1)
 MOVE = Predicate("move", 2)
 INI_STATE = [["a", "b", "c", "d"]]
 INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
@@ -136,7 +136,7 @@ class BlockWorld(SymbolicEnvironment):
     """
     def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=(), block_n=4):
         actions = [MOVE]
-        self.language = LanguageFrame(actions, extensional=[ON, CLEAR, BLOCK, FLOOR]+list(additional_predicates),
+        self.language = LanguageFrame(actions, extensional=[ON, TOP, BLOCK, FLOOR]+list(additional_predicates),
                                       constants=sum(initial_state, [])+["floor"])
         self.max_step = 50
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
@@ -206,10 +206,9 @@ class BlockWorld(SymbolicEnvironment):
         for stack in state:
             if len(stack)>0:
                 atoms.add(Atom(ON, [stack[0], "floor"]))
-                atoms.add(Atom(CLEAR, [stack[-1]]))
+                atoms.add(Atom(TOP, [stack[-1]]))
             for i in range(len(stack)-1):
                 atoms.add(Atom(ON, [stack[i+1], stack[i]]))
-        atoms.add(Atom(CLEAR, ["floor"]))
         return atoms
 
     def get_reward(self):

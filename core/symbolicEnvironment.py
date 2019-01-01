@@ -26,10 +26,10 @@ class SymbolicEnvironment(object):
         self._state = copy.deepcopy(self.initial_state)
 
 
-UP = Predicate("up",2)
-DOWN = Predicate("down",2)
-LEFT = Predicate("left",2)
-RIGHT = Predicate("right",2)
+UP = Predicate("up",0)
+DOWN = Predicate("down",0)
+LEFT = Predicate("left",0)
+RIGHT = Predicate("right",0)
 LESS = Predicate("less",2)
 ZERO = Predicate("zero",1)
 LAST = Predicate("last",1)
@@ -42,7 +42,7 @@ WIDTH = 5
 class CliffWalking(SymbolicEnvironment):
     def __init__(self):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, LAST],
+        self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, LAST, CURRENT],
                                       constants=[str(i) for i in range(WIDTH)])
         background = []
         self.unseen_background = []
@@ -136,12 +136,12 @@ class BlockWorld(SymbolicEnvironment):
     """
     def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=(), block_n=4):
         actions = [MOVE]
-        self.language = LanguageFrame(actions, extensional=[ON, TOP, BLOCK, FLOOR]+list(additional_predicates),
-                                      constants=sum(initial_state, [])+["floor"])
         self.max_step = 50
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
         self.state_dim = block_n**3
         self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
+        self.language = LanguageFrame(actions, extensional=[ON, TOP, BLOCK, FLOOR]+list(additional_predicates),
+                                      constants=self._all_blocks)
         self._additional_predicates = additional_predicates
         background = list(background)
         background.append(Atom(FLOOR, ["floor"]))

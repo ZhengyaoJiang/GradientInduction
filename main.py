@@ -47,7 +47,7 @@ def start_DILP(task, name, mode, variation=None):
         learner = SupervisedDILP(man, ilp, 0.5)
     elif task == "cliffwalking":
         man, env = setup_cliffwalking(variation)
-        agent = RLDILP(man, env, state_encoding="terms")
+        agent = RLDILP(man, env, state_encoding="atoms")
         discounting = 1.0
         critic = TableCritic(discounting=discounting, learning_rate=0.1, involve_steps=True)
         # critic = None

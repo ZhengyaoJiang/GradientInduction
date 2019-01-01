@@ -51,8 +51,11 @@ class ReinforceLearner(object):
         self.saver = tf.train.Saver()
 
     def loss(self, indexed_action_prob):
-        return (-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))
+        rl_loss = (-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))
                )*self.tf_advantage*self.tf_additional_discount)
+        excess_penalty = 0.01*tf.reduce_sum(tf.nn.relu(tf.reduce_sum(self.tf_action_eval, axis=1)-1.0)**2)
+        regularization_loss = 0.001*tf.reduce_sum(tf.stack([tf.nn.l2_loss(v) for v in self.agent.all_variables()]))
+        return rl_loss + regularization_loss
 
     def _construct_action_prob(self):
         """
@@ -61,6 +64,7 @@ class ReinforceLearner(object):
         if self.type == "DILP":
             # slice the action valuations from the valuation vectors
             action_eval = tf.batch_gather(self.agent.tf_result_valuation, self.tf_actions_valuation_indexes)
+            self.tf_action_eval = action_eval
             sum_action_eval = tf.tile(tf.reduce_sum(action_eval, axis=1, keepdims=True), [1, self.env.action_n])
             action_prob = tf.where(sum_action_eval > 1.0,
                                    action_eval / sum_action_eval,

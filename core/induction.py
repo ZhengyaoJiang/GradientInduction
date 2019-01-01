@@ -42,18 +42,23 @@ class BaseDILP(object):
                                                                    dtype=tf.float32)
 
     def show_definition(self, sess):
-        for predicate, clauses in self.rules_manager.all_clauses.items():
-            rules_weights = self.rule_weights[predicate]
-            rules_weights = sess.run([rules_weights])[0]
-            print(str(predicate))
-            for i, rule_weights in enumerate(rules_weights):
-                weights = softmax([rule_weights])[0]
-                indexes = np.nonzero(weights>0.05)[0]
-                print("clasue {}".format(i))
-                for j in range(len(indexes)):
-                    print("weight is {}".format(weights[indexes[j]]))
-                    print(str(clauses[i][indexes[j]]))
-                print("\n")
+        for predicate in self.rules_manager.all_clauses:
+            result = self.get_predicate_definition(sess, predicate)
+            for weight, clause in result:
+                print(str(round(weight, 3))+": "+clause)
+
+    def get_predicate_definition(self, sess, predicate, threshold=0.01):
+        clauses = self.rules_manager.all_clauses[predicate]
+        rules_weights = self.rule_weights[predicate]
+        rules_weights = sess.run([rules_weights])[0]
+        result = []
+        for i, rule_weights in enumerate(rules_weights):
+            weights = softmax([rule_weights])[0]
+            indexes = np.nonzero(weights>threshold)[0]
+            for j in range(len(indexes)):
+                result.append((weights[indexes[j]], str(clauses[i][indexes[j]])))
+        return result
+
 
     def axioms2valuation(self, axioms):
         '''

@@ -142,6 +142,8 @@ class RulesManager():
             for pruned_caluse in pruned:
                 if tuple(reversed(pruned_caluse.body)) == clause.body:
                     return False
+                if str(clause)==str(pruned):
+                    return False
             return True
 
         for clause in clauses:

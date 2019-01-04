@@ -37,33 +37,35 @@ CLIFF = Predicate("cliff",2)
 SUCC = Predicate("succ",2)
 GOAL = Predicate("goal",2)
 CURRENT = Predicate("current", 2)
-WIDTH = 5
 
 class CliffWalking(SymbolicEnvironment):
-    def __init__(self):
+    all_variations = ("topleft","topright", "center", "6by6", "7by7")
+    all_NN_variations = ("topleft","topright", "center", "6by6", "7by7")
+    def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
         self.language = LanguageFrame(actions, extensional=[LESS, ZERO, SUCC, LAST, CURRENT],
-                                      constants=[str(i) for i in range(WIDTH)])
+                                      constants=[str(i) for i in range(width)])
         background = []
         self.unseen_background = []
-        self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
-        self.unseen_background.append(Atom(GOAL, [str(WIDTH-1), "0"]))
-        background.append(Atom(LAST, [str(WIDTH-1)]))
+        self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, width - 1)])
+        self.unseen_background.append(Atom(GOAL, [str(width - 1), "0"]))
+        background.append(Atom(LAST, [str(width - 1)]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
-        background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, WIDTH)
-                           for j in range(0, WIDTH) if i<j])
-        background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(WIDTH-1)])
+        background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
+                           for j in range(0, width) if i < j])
+        background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
         background.append(Atom(ZERO, ["0"]))
         #background.extend([Atom(CLIFF, ["1", str(y)]) for y in range(2, WIDTH)])
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])
-        super(CliffWalking, self).__init__(background, ("0","0"), actions)
+        super(CliffWalking, self).__init__(background, initial_state, actions)
         self.max_step = 50
         self.state_dim = 2
         self.all_actions = actions
+        self.width=width
 
     @property
     def all_states(self):
-        return [(str(i), str(j)) for i in range(WIDTH) for j in range(WIDTH)]
+        return [(str(i), str(j)) for i in range(self.width) for j in range(self.width)]
 
     def state2vector(self, state):
         return np.array([float(state[0]), float(state[1])])
@@ -97,13 +99,13 @@ class CliffWalking(SymbolicEnvironment):
         self.acc_reward += reward
         if isinstance(action, Atom):
             action = action.predicate
-        if action == UP and y<WIDTH-1:
+        if action == UP and y<self.width-1:
             self._state = (str(x), str(y+1))
         elif action == DOWN and y>0:
             self._state = (str(x), str(y-1))
         elif action == LEFT and x>0:
             self._state = (str(x-1), str(y))
-        elif action == RIGHT and x<WIDTH-1:
+        elif action == RIGHT and x<self.width-1:
             self._state = (str(x+1), str(y))
         return reward, finished
 
@@ -120,6 +122,23 @@ class CliffWalking(SymbolicEnvironment):
             elif self.step>=self.max_step:
                 return -0.0, True
         return -0.02, False
+
+    def vary(self, type):
+        width = self.width
+        initial_state = ("0", "0")
+        if type=="topleft":
+            initial_state=(0, width-1)
+        elif type=="topright":
+            initial_state=(width-1, width-1)
+        elif type=="center":
+            initial_state=(width//2, width//2)
+        elif type=="6by6":
+            width = 6
+        elif type=="7by7":
+            width = 7
+        else:
+            raise ValueError
+        return CliffWalking(initial_state, width)
 
 ON = Predicate("on", 2)
 TOP = Predicate("top", 1)

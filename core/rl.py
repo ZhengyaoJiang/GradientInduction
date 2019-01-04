@@ -12,7 +12,8 @@ def totuple(a):
         return a
 
 Episode = namedtuple("Episode", ["reward_history", "action_history", "action_trajectory_prob", "state_history",
-               "valuation_history", "valuation_index_history", "input_vector_history", "returns", "steps", "final_return"])
+               "valuation_history", "valuation_index_history", "input_vector_history",
+                                 "returns", "steps", "advantages", "final_return"])
 
 class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
@@ -54,8 +55,8 @@ class ReinforceLearner(object):
         rl_loss = (-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))
                )*self.tf_advantage*self.tf_additional_discount)
         excess_penalty = 0.01*tf.reduce_sum(tf.nn.relu(tf.reduce_sum(self.tf_action_eval, axis=1)-1.0)**2)
-        regularization_loss = 0.001*tf.reduce_sum(tf.stack([tf.nn.l2_loss(v) for v in self.agent.all_variables()]))
-        return rl_loss + regularization_loss
+        regularization_loss = 1e-4*tf.reduce_mean(tf.stack([tf.nn.l2_loss(v) for v in self.agent.all_variables()]))
+        return rl_loss
 
     def _construct_action_prob(self):
         """
@@ -135,12 +136,19 @@ class ReinforceLearner(object):
         returns = discount(reward_history, self.discounting)
         if self.critic:
             self.critic.batch_learn(state_history, reward_history, sess)
+            values = self.critic.get_values(state_history,sess,steps).flatten()
+            #advantages = generalized_adv(reward_history, values,
+            #                             self.discounting)
+            advantages = np.array(returns) - values
+        else:
+            advantages = returns
         return Episode(reward_history, action_history, action_trajectory_prob, state_history,
-               valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return)
+               valuation_history, valuation_index_history, input_vector_history,
+                       returns, steps, advantages, final_return)
 
-    def get_minibatch_buffer(self, sess, batch_size=5):
-        episode_buffer = [[] for _ in range(9)]
-        sample_related_indexes = range(9)
+    def get_minibatch_buffer(self, sess, batch_size=10):
+        episode_buffer = [[] for _ in range(10)]
+        sample_related_indexes = range(10)
 
         def dump_episode2buffer(episode):
             for i in sample_related_indexes:
@@ -201,7 +209,7 @@ class ReinforceLearner(object):
             for _ in range(repeat):
                 e = self.sample_episode(sess)
                 reward_history, action_history, action_prob_history, state_history, \
-                valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return = e
+                valuation_history, valuation_index_history, input_vector_history, returns, steps, adv, final_return = e
                 results.append(final_return)
         unique, counts = np.unique(results, return_counts=True)
         distribution =  dict(zip(unique, counts))
@@ -211,13 +219,8 @@ class ReinforceLearner(object):
     def train_step(self, sess):
         e = self.minibatch_buffer.next()
         reward_history, action_history, action_prob_history, state_history,\
-            valuation_history, valuation_index_history, input_vector_history, returns, steps, final_return = e
-        if self.critic:
-            values = self.critic.get_values(state_history, sess, steps).flatten()
-            #advantage = generalized_adv(reward_history, values, self.discounting)
-            advantage = returns - values
-        else:
-            advantage = returns
+            valuation_history, valuation_index_history, input_vector_history,\
+            returns, steps, advantage, final_return = e
         #additional_discount = np.cumprod(self.discounting*np.ones_like(advnatage))
         #advantage = normalize(advantage)
         additional_discount = np.ones_like(advantage)
@@ -502,7 +505,7 @@ def normalize(scalars):
     mean, std = np.mean(scalars), np.std(scalars)
     return (scalars - mean)/std
 
-def generalized_adv(rewards, values, discounting, lam=0.9):
+def generalized_adv(rewards, values, discounting, lam=0.95):
     values[-1] = rewards[-1]
     deltas = rewards[:-1] + discounting * values[1:] - values[:-1]
     return np.concatenate([discount(deltas, discounting*lam), [0]], axis=0)

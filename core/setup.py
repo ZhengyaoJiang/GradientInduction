@@ -71,19 +71,18 @@ def setup_cliffwalking(variation=None, invented=True):
         env = env.vary(variation)
     temp1 = [RuleTemplate(1, False)]
     temp1_main = [RuleTemplate(2, False)]
-    temp2_main = [RuleTemplate(2, True)]
+    temp2_main = [RuleTemplate(3, True)]
     temp2_invent = [RuleTemplate(1, True), RuleTemplate(1, False)]
     if invented:
         invented = Predicate("invented", 1)
         invented2 = Predicate("invented2", 2)
-        program_temp = ProgramTemplate([invented, invented2,], {
-                                                    invented: temp2_invent,
-                                                    invented2: temp2_invent,
+        program_temp = ProgramTemplate([invented2,], {
+                                                    invented2: temp1,
                                                     UP: temp2_main,
                                                     DOWN: temp2_main,
                                                     LEFT: temp2_main,
                                                     RIGHT: temp2_main},
-                                       3)
+                                       2)
     else:
         program_temp = ProgramTemplate([], {UP: temp1, DOWN: temp1, LEFT: temp1, RIGHT: temp1}, 1)
     man = RulesManager(env.language, program_temp)
@@ -100,18 +99,19 @@ def setup_unstack(variation=None, templete="reduced"):
         maintemp = [RuleTemplate(0, True), RuleTemplate(1, True)]
         inventedtemp = [RuleTemplate(1, True)]
         inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, False)]
-        inventedtemp_2extential = [RuleTemplate(2, False), RuleTemplate(1, True)]
+        inventedtemp_2extential = [RuleTemplate(2, False)]
     invented = Predicate("invented", 2)
     invented4 = Predicate("invented4", 2)
     invented2 = Predicate("invented2", 1)
     invented3 = Predicate("invented3", 1)
 
-    program_temp = ProgramTemplate([invented, invented3,],
+    program_temp = ProgramTemplate([invented, invented3, invented2],
                                                           {
-                                                           invented3: inventedtemp_2extential,
+                                                           invented3: inventedtemp2,
                                                            invented: inventedtemp2,
+                                                           invented2: inventedtemp_2extential,
                                                            MOVE: maintemp,
-                                                           }, 3)
+                                                           }, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
 

@@ -103,6 +103,7 @@ class BaseDILP(object):
         for predicate, matrix in self.rules_manager.deduction_matrices.items():
             deduced_valuation += BaseDILP.inference_single_predicate(valuation, matrix, self.rule_weights[predicate])
         return deduced_valuation+tf.transpose(self.tf_input_valuation)
+        #return prob_sum(deduced_valuation, valuation)
 
     @staticmethod
     def inference_single_predicate(valuation, deduction_matrices, rule_weights):

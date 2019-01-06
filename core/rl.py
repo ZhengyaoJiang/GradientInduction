@@ -147,7 +147,8 @@ class ReinforceLearner(object):
                        returns, steps, advantages, final_return)
 
     def get_minibatch_buffer(self, sess, batch_size=10):
-        episode_buffer = [[] for _ in range(10)]
+        empty_buffer = [[] for _ in range(10)]
+        episode_buffer = deepcopy(empty_buffer)
         sample_related_indexes = range(10)
 
         def dump_episode2buffer(episode):
@@ -155,6 +156,8 @@ class ReinforceLearner(object):
                 episode_buffer[i].extend(episode[i])
 
         def split_buffer(raw_buffer, index):
+            if len(episode_buffer[0]) < index:
+                return raw_buffer, deepcopy(empty_buffer)
             result = []
             new_buffer = []
             for l in raw_buffer:
@@ -163,7 +166,7 @@ class ReinforceLearner(object):
             return result, new_buffer
 
         while True:
-            while len(episode_buffer[0]) < batch_size:
+            if len(episode_buffer[0]) ==0:
                 e = self.sample_episode(sess)
                 dump_episode2buffer(e)
                 final_return = e.final_return
@@ -218,6 +221,7 @@ class ReinforceLearner(object):
 
     def train_step(self, sess):
         e = self.minibatch_buffer.next()
+        #e = self.sample_episode(sess)
         reward_history, action_history, action_prob_history, state_history,\
             valuation_history, valuation_index_history, input_vector_history,\
             returns, steps, advantage, final_return = e

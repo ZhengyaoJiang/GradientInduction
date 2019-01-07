@@ -2,6 +2,7 @@ from core.setup import *
 from core.hypertune import run
 from collections import OrderedDict
 import argparse
+import json
 
 def generalized_test(task, name, algo):
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -24,17 +25,21 @@ def generalized_test(task, name, algo):
             print("==========="+variation+"==============")
             result = start_DILP(task, name, "evaluate", variation)
             pprint(result)
-            summary[variation] = str(round(result["mean"], 3)) + "+-" + str(round(result["std"], 3))
+            variation = "train" if not variation else variation
+            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3)}
             tf.reset_default_graph()
     elif algo=="NN":
         for variation in [""]+list(env.all_NN_variations):
             print("==========="+variation+"==============")
             result = start_NN(task, name, "evaluate", variation)
             pprint(result)
-            summary[variation] = str(round(result["mean"], 3)) + "+-" + str(round(result["std"], 3))
+            variation = "train" if not variation else variation
+            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3)}
             tf.reset_default_graph()
     for k,v in summary.items():
-        print(k+": "+v)
+        print(k+": "+str(v["mean"])+"+-"+str(v["std"]))
+    with open("model/"+name+"/result.json", "wr") as f:
+        json.dump(summary, f)
 
 #@ray.remote
 def start_DILP(task, name, mode, variation=None):

@@ -43,7 +43,7 @@ class CliffWalking(SymbolicEnvironment):
     all_NN_variations = ("topleft","topright", "center", "6by6", "7by7")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT],
+        self.language = LanguageFrame(actions, extensional=[ZERO, SUCC, LESS, CURRENT],
                                       constants=[str(i) for i in range(width)])
         background = []
         self.unseen_background = []
@@ -53,7 +53,7 @@ class CliffWalking(SymbolicEnvironment):
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
                            for j in range(0, width) if i < j])
-        #background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
+        background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
         background.append(Atom(ZERO, ["0"]))
         #background.extend([Atom(CLIFF, ["1", str(y)]) for y in range(2, WIDTH)])
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])

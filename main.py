@@ -30,6 +30,7 @@ def generalized_test(task, name, algo):
         for variation in [""]+list(env.all_NN_variations):
             print("==========="+variation+"==============")
             result = start_NN(task, name, "evaluate", variation)
+            pprint(result)
             summary[variation] = str(round(result["mean"], 3)) + "+-" + str(round(result["std"], 3))
             tf.reset_default_graph()
     for k,v in summary.items():
@@ -59,7 +60,6 @@ def start_DILP(task, name, mode, variation=None):
         man, env = setup_unstack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
         # critic = NeuralCritic([10,10], len(env.state))
-        # learner = PPOLearner(agent, env, critic)
         if variation:
             critic = None
         else:
@@ -124,12 +124,19 @@ def start_NN(task, name, mode, variation=None):
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
-        critic = TableCritic(1.0)
+        critic = TableCritic(1.0, involve_steps=True)
+        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+                                   steps=120000, name=name)
+    elif task == "unstack":
+        man, env = setup_unstack(variation)
+        agent = NeuralAgent([20,10], env.action_n, env.state_dim)
+        #critic = None
+        critic = TableCritic(1.0, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
-        agent = NeuralAgent([200,100], env.action_n, env.state_dim)
+        agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
         critic = None
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,

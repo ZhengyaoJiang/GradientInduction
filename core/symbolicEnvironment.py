@@ -147,6 +147,7 @@ INI_STATE = [["a", "b", "c", "d"]]
 INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
 FLOOR = Predicate("floor", 1)
 BLOCK = Predicate("block", 1)
+CLEAR = Predicate("clear", 1)
 
 import string
 class BlockWorld(SymbolicEnvironment):
@@ -303,7 +304,7 @@ GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
     all_variations = ("shuffle top2","shuffle middle2", "5blocks",
                       "6blocks", "7blocks")
-    all_NN_variations = ("shuffle top2", "shuffle bottom2")
+    all_NN_variations = ("shuffle top2", "shuffle middle2")
     def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4):
         super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],
                                  background=[goal_state], block_n=block_n)

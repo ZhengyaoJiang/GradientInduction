@@ -72,13 +72,13 @@ def setup_cliffwalking(variation=None, invented=True):
     temp1 = [RuleTemplate(1, False)]
     temp1_main = [RuleTemplate(2, False)]
     temp2_main = [RuleTemplate(2, True)]
-    temp2_invent = [RuleTemplate(1, True), RuleTemplate(1, False)]
+    temp2_invent = [RuleTemplate(1, True)]
     if invented:
         invented = Predicate("invented", 1)
         invented2 = Predicate("invented2", 2)
-        program_temp = ProgramTemplate([], {
-                                                    #invented: temp2_invent,
-                                                    #invented2: temp2_invent,
+        program_temp = ProgramTemplate([invented, invented2], {
+                                                    invented: temp2_invent,
+                                                    invented2: temp2_invent,
                                                     UP: temp2_main,
                                                     DOWN: temp2_main,
                                                     LEFT: temp2_main,

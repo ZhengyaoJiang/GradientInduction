@@ -55,8 +55,8 @@ class ReinforceLearner(object):
         rl_loss = (-tf.reduce_sum(tf.log(tf.clip_by_value(indexed_action_prob, 1e-5, 1.0))
                )*self.tf_advantage*self.tf_additional_discount)
         #excess_penalty = 0.01*tf.reduce_sum(tf.nn.relu(tf.reduce_sum(self.tf_action_eval, axis=1)-1.0)**2)
-        #regularization_loss = 1e-4*tf.reduce_mean(tf.stack([tf.nn.l2_loss(v) for v in self.agent.all_variables()]))
-        return rl_loss
+        regularization_loss = 1e-4*tf.reduce_mean(tf.stack([tf.nn.l2_loss(v) for v in self.agent.all_variables()]))
+        return rl_loss#+regularization_loss
 
     def _construct_action_prob(self):
         """
@@ -137,9 +137,9 @@ class ReinforceLearner(object):
         if self.critic:
             self.critic.batch_learn(state_history, reward_history, sess)
             values = self.critic.get_values(state_history,sess,steps).flatten()
-            #advantages = generalized_adv(reward_history, values,
-            #                             self.discounting)
-            advantages = np.array(returns) - values
+            advantages = generalized_adv(reward_history, values,
+                                         self.discounting)
+            # advantages = np.array(returns) - values
         else:
             advantages = returns
         return Episode(reward_history, action_history, action_trajectory_prob, state_history,
@@ -419,7 +419,7 @@ class NeuralCritic(object):
             outputs = tf.concat([self.tf_input, self.tf_steps[:, np.newaxis]], axis=1)
         else:
             outputs = self.tf_input
-        with tf.variable_scope("NN"):
+        with tf.variable_scope("critic"):
             for unit_n in unit_list:
                 outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.relu)
             outputs = tf.layers.dense(outputs, 1)
@@ -437,7 +437,7 @@ class NeuralCritic(object):
 
 
     def all_variables(self):
-        return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="NN")
+        return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="critic")
 
     def log(self, sess):
         pass

@@ -43,7 +43,7 @@ class CliffWalking(SymbolicEnvironment):
     all_NN_variations = ("topleft","topright", "center", "6by6", "7by7")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[ZERO, SUCC, LESS, CURRENT],
+        self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT],
                                       constants=[str(i) for i in range(width)])
         background = []
         self.unseen_background = []
@@ -53,7 +53,7 @@ class CliffWalking(SymbolicEnvironment):
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
                            for j in range(0, width) if i < j])
-        background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
+        #background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
         background.append(Atom(ZERO, ["0"]))
         #background.extend([Atom(CLIFF, ["1", str(y)]) for y in range(2, WIDTH)])
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])
@@ -148,6 +148,7 @@ INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
 FLOOR = Predicate("floor", 1)
 BLOCK = Predicate("block", 1)
 CLEAR = Predicate("clear", 1)
+MAX_WIDTH = 7
 
 import string
 class BlockWorld(SymbolicEnvironment):
@@ -158,14 +159,14 @@ class BlockWorld(SymbolicEnvironment):
         actions = [MOVE]
         self.max_step = 50
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
-        self.state_dim = block_n**3
+        self.state_dim = MAX_WIDTH**3
         self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
-        self.language = LanguageFrame(actions, extensional=[ON, TOP, BLOCK, FLOOR]+list(additional_predicates),
+        self.language = LanguageFrame(actions, extensional=[ON,FLOOR]+list(additional_predicates),
                                       constants=self._all_blocks)
         self._additional_predicates = additional_predicates
         background = list(background)
         background.append(Atom(FLOOR, ["floor"]))
-        background.extend([Atom(BLOCK, [b]) for b in list(string.ascii_lowercase)[:block_n]])
+        #background.extend([Atom(BLOCK, [b]) for b in list(string.ascii_lowercase)[:block_n]])
         super(BlockWorld, self).__init__(background, initial_state, actions)
         self._block_n = block_n
 
@@ -215,7 +216,7 @@ class BlockWorld(SymbolicEnvironment):
         return (self._block_n+1)**2
 
     def state2vector(self, state):
-        matrix = np.zeros([self._block_n, self._block_n, self._block_n])
+        matrix = np.zeros([MAX_WIDTH, MAX_WIDTH, MAX_WIDTH])
         for i, stack in enumerate(state):
             for j, block in enumerate(stack):
                 matrix[i][j][self._block_encoding[block]-1] = 1.0
@@ -226,7 +227,7 @@ class BlockWorld(SymbolicEnvironment):
         for stack in state:
             if len(stack)>0:
                 atoms.add(Atom(ON, [stack[0], "floor"]))
-                atoms.add(Atom(TOP, [stack[-1]]))
+                #atoms.add(Atom(TOP, [stack[-1]]))
             for i in range(len(stack)-1):
                 atoms.add(Atom(ON, [stack[i+1], stack[i]]))
         return atoms

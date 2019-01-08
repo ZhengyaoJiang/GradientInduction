@@ -22,20 +22,22 @@ def generalized_test(task, name, algo):
     summary = OrderedDict()
     if algo=="DILP":
         for variation in [""]+list(env.all_variations):
+            tf.reset_default_graph()
             print("==========="+variation+"==============")
             result = start_DILP(task, name, "evaluate", variation)
             pprint(result)
             variation = "train" if not variation else variation
-            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3)}
-            tf.reset_default_graph()
+            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3),
+                                  "distribution":result["distribution"]}
     elif algo=="NN":
         for variation in [""]+list(env.all_NN_variations):
+            tf.reset_default_graph()
             print("==========="+variation+"==============")
             result = start_NN(task, name, "evaluate", variation)
             pprint(result)
             variation = "train" if not variation else variation
-            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3)}
-            tf.reset_default_graph()
+            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3),
+                                  "distribution":result["distribution"]}
     for k,v in summary.items():
         print(k+": "+str(v["mean"])+"+-"+str(v["std"]))
     with open("model/"+name+"/result.json", "wr") as f:
@@ -68,8 +70,8 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
-            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+            #critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
             # critic = None
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
                                    batched=True, steps=50000, name=name)
@@ -82,9 +84,10 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+            #critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=12000, name=name)
+                                   batched=True, steps=50000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -94,9 +97,10 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+            #critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.1, critic=critic,
-                                   batched=True, steps=12000, name=name)
+                                   batched=True, steps=50000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -123,33 +127,33 @@ def start_NN(task, name, mode, variation=None):
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
         #learner = PPOLearner(agent, env, critic=critic)
-        critic = None
+        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
-        critic = TableCritic(1.0, involve_steps=True)
+        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         #critic = None
-        critic = TableCritic(1.0, involve_steps=True)
+        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
-        critic = None
+        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
-        critic = None
+        critic = NeuralCritic([20], env.state_dim, 0.9, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic, discounting=0.9,
                                    steps=120000, name=name)
     if mode == "train":
@@ -216,11 +220,14 @@ if __name__ == "__main__":
     if args.mode=="generalize":
         generalized_test(args.task, args.name, args.algo)
     else:
-        if args.algo == "DILP":
-            starter = start_DILP
-        elif args.algo == "NN":
-            starter = start_NN
-        else:
-            raise ValueError()
-        pprint(starter(args.task, args.name, args.mode))
+        try:
+            if args.algo == "DILP":
+                starter = start_DILP
+            elif args.algo == "NN":
+                starter = start_NN
+            else:
+                raise ValueError()
+            pprint(starter(args.task, args.name, args.mode))
+        finally:
+            generalized_test(args.task, args.name, args.algo)
 

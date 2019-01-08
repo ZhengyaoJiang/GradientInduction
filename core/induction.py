@@ -18,6 +18,7 @@ class BaseDILP(object):
         self.ground_atoms = rules_manager.all_grounds
         self.base_valuation = self.axioms2valuation(background)
         self._construct_graph()
+        self.previous_definition = {}
 
     def _construct_graph(self):
         self.tf_input_valuation = tf.placeholder(shape=[None, self.base_valuation.shape[0]], dtype=tf.float32)
@@ -43,11 +44,23 @@ class BaseDILP(object):
 
     def show_definition(self, sess):
         for predicate in self.rules_manager.all_clauses:
+            print()
+            print(predicate)
             result = self.get_predicate_definition(sess, predicate)
             for weight, clause in result:
-                print(str(round(weight, 3))+": "+clause)
+                if weight>0.1:
+                    print(str(round(weight, 3))+": "+clause)
+            print("------------------------------------")
+            print("differences:")
+            if predicate in self.previous_definition:
+                for i,(weight, clause) in enumerate(result):
+                    difference = weight - self.previous_definition[predicate][i][0]
+                    if abs(difference)>1e-3:
+                        print(str(round(difference, 3))+": "+clause)
+            print("=======================================")
+            self.previous_definition[predicate] = result
 
-    def get_predicate_definition(self, sess, predicate, threshold=0.01):
+    def get_predicate_definition(self, sess, predicate, threshold=0.0):
         clauses = self.rules_manager.all_clauses[predicate]
         rules_weights = self.rule_weights[predicate]
         rules_weights = sess.run([rules_weights])[0]

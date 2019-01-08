@@ -71,8 +71,8 @@ def setup_cliffwalking(variation=None, invented=True):
         env = env.vary(variation)
     temp1 = [RuleTemplate(1, False)]
     temp1_main = [RuleTemplate(2, False)]
-    temp2_main = [RuleTemplate(2, True)]
-    temp2_invent = [RuleTemplate(1, True)]
+    temp2_main = [RuleTemplate(3, True)]
+    temp2_invent = [RuleTemplate(1, True), RuleTemplate(1, False)]
     if invented:
         invented = Predicate("invented", 1)
         invented2 = Predicate("invented2", 2)
@@ -97,9 +97,9 @@ def setup_unstack(variation=None, templete="reduced"):
         maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
         inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     if templete=="reduced":
-        maintemp = [RuleTemplate(0, True), RuleTemplate(1, True)]
+        maintemp = [RuleTemplate(1, True), RuleTemplate(0, True)]
         inventedtemp = [RuleTemplate(1, True)]
-        inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, False)]
+        inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, True)]
         inventedtemp_2extential = [RuleTemplate(2, False)]
     invented = Predicate("invented", 2)
     invented4 = Predicate("invented4", 2)

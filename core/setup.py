@@ -116,7 +116,7 @@ def setup_unstack(variation=None, templete="reduced"):
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_stack(variation=None, templete="full"):
+def setup_stack(variation=None, templete="reduced"):
     env = Stack(initial_state=INI_STATE2)
     if variation:
         env = env.vary(variation)
@@ -124,12 +124,22 @@ def setup_stack(variation=None, templete="full"):
         maintemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
         inventedtemp = [RuleTemplate(1, False), RuleTemplate(1, True)]
     if templete=="reduced":
-        maintemp = [RuleTemplate(1, True)]
+        maintemp = [RuleTemplate(1, True), RuleTemplate(0, True)]
         inventedtemp = [RuleTemplate(1, True)]
+        inventedtemp2 = [RuleTemplate(1, True), RuleTemplate(1, True)]
+        inventedtemp_2extential = [RuleTemplate(2, False)]
     invented = Predicate("invented", 2)
+    invented4 = Predicate("invented4", 2)
     invented2 = Predicate("invented2", 1)
-    program_temp = ProgramTemplate([invented, invented2],
-                                   {invented:inventedtemp, MOVE:maintemp, invented2:inventedtemp}, 3)
+    invented3 = Predicate("invented3", 1)
+
+    program_temp = ProgramTemplate([invented, invented3, invented2],
+                                                          {
+                                                           invented3: inventedtemp2,
+                                                           invented: inventedtemp2,
+                                                           invented2: inventedtemp_2extential,
+                                                           MOVE: maintemp,
+                                                           }, 4)
     man = RulesManager(env.language, program_temp)
     return man, env
 

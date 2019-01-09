@@ -2,7 +2,7 @@ from __future__ import print_function, division, absolute_import
 from core.clause import *
 from core.ilp import LanguageFrame
 import copy
-from random import shuffle, choice
+from random import choice
 
 
 class SymbolicEnvironment(object):
@@ -14,7 +14,7 @@ class SymbolicEnvironment(object):
         :param negative: list of atoms, negative instances
         '''
         self.background = background
-        self._state = initial_state
+        self._state = copy.deepcopy(initial_state)
         self.initial_state = copy.deepcopy(initial_state)
         self.actions = actions
         self.acc_reward = 0
@@ -39,8 +39,7 @@ GOAL = Predicate("goal",2)
 CURRENT = Predicate("current", 2)
 
 class CliffWalking(SymbolicEnvironment):
-    all_variations = ("topleft","topright", "center", "6by6", "7by7")
-    all_NN_variations = ("topleft","topright", "center", "6by6", "7by7")
+    all_variations = ("top left","top right", "center", "6 by 6", "7 by 7")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
         self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT],
@@ -126,15 +125,15 @@ class CliffWalking(SymbolicEnvironment):
     def vary(self, type):
         width = self.width
         initial_state = ("0", "0")
-        if type=="topleft":
+        if type=="top left":
             initial_state=(0, width-1)
-        elif type=="topright":
+        elif type=="top right":
             initial_state=(width-1, width-1)
         elif type=="center":
             initial_state=(width//2, width//2)
-        elif type=="6by6":
+        elif type=="6 by 6":
             width = 6
-        elif type=="7by7":
+        elif type=="7 by 7":
             width = 7
         else:
             raise ValueError
@@ -161,7 +160,7 @@ class BlockWorld(SymbolicEnvironment):
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
         self.state_dim = MAX_WIDTH**3
         self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
-        self.language = LanguageFrame(actions, extensional=[ON,FLOOR]+list(additional_predicates),
+        self.language = LanguageFrame(actions, extensional=[ON,FLOOR,TOP]+list(additional_predicates),
                                       constants=self._all_blocks)
         self._additional_predicates = additional_predicates
         background = list(background)
@@ -227,7 +226,7 @@ class BlockWorld(SymbolicEnvironment):
         for stack in state:
             if len(stack)>0:
                 atoms.add(Atom(ON, [stack[0], "floor"]))
-                #atoms.add(Atom(TOP, [stack[-1]]))
+                atoms.add(Atom(TOP, [stack[-1]]))
             for i in range(len(stack)-1):
                 atoms.add(Atom(ON, [stack[i+1], stack[i]]))
         return atoms
@@ -236,9 +235,8 @@ class BlockWorld(SymbolicEnvironment):
         pass
 
 class Unstack(BlockWorld):
-    all_variations = ("shuffle top2","shuffle bottom2", "5blocks",
-                      "6blocks", "7blocks")
-    all_NN_variations = ("shuffle top2", "shuffle bottom2")
+    all_variations = ("swap top 2","2 columns", "5 blocks",
+                      "6 blocks", "7 blocks")
 
     def get_reward(self):
         if self.step >= self.max_step:
@@ -250,17 +248,17 @@ class Unstack(BlockWorld):
 
     def vary(self, type):
         block_n = self._block_n
-        if type=="shuffle top2":
+        if type=="swap top 2":
             initial_state=[["a", "b", "d", "c"]]
-        elif type=="shuffle bottom2":
-            initial_state=[["b", "a", "c", "d"]]
-        elif type=="5blocks":
+        elif type=="2 columns":
+            initial_state=[["b", "a"], ["c", "d"]]
+        elif type=="5 blocks":
             initial_state=[["a", "b", "c", "d", "e"]]
             block_n = 5
-        elif type=="6blocks":
+        elif type=="6 blocks":
             initial_state=[["a", "b", "c", "d", "e", "f"]]
             block_n = 6
-        elif type=="7blocks":
+        elif type=="7 blocks":
             initial_state=[["a", "b", "c", "d", "e", "f", "g"]]
             block_n = 7
         else:
@@ -269,9 +267,8 @@ class Unstack(BlockWorld):
 
 
 class Stack(BlockWorld):
-    all_variations = ("shuffle left2","shuffle right2", "5blocks",
-                      "6blocks", "7blocks")
-    all_NN_variations = ("shuffle left2", "shuffle right2")
+    all_variations = ("swap right 2","2 columns", "5 blocks",
+                      "6 blocks", "7 blocks")
 
     def get_reward(self):
         if self.step >= self.max_step:
@@ -283,17 +280,17 @@ class Stack(BlockWorld):
 
     def vary(self, type):
         block_n = self._block_n
-        if type=="shuffle right2":
+        if type=="swap right 2":
             initial_state=[["a"], ["b"], ["d"], ["c"]]
-        elif type=="shuffle left2":
-            initial_state=[["b"], ["a"], ["c"], ["d"]]
-        elif type=="5blocks":
+        elif type=="2 columns":
+            initial_state=[["b"], ["a"]], [["c"], ["d"]]
+        elif type=="5 blocks":
             initial_state=[["a"], ["b"], ["c"], ["d"], ["e"]]
             block_n = 5
-        elif type=="6blocks":
+        elif type=="6 blocks":
             initial_state=[["a"], ["b"], ["c"], ["d"], ["e"], ["f"]]
             block_n = 6
-        elif type=="7blocks":
+        elif type=="7 blocks":
             initial_state=[["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]]
             block_n = 7
         else:
@@ -303,9 +300,8 @@ class Stack(BlockWorld):
 
 GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
-    all_variations = ("shuffle top2","shuffle middle2", "5blocks",
-                      "6blocks", "7blocks")
-    all_NN_variations = ("shuffle top2", "shuffle middle2")
+    all_variations = ("swap top2","swap middle 2", "5 blocks",
+                      "6 blocks", "7 blocks")
     def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4):
         super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],
                                  background=[goal_state], block_n=block_n)
@@ -320,17 +316,17 @@ class On(BlockWorld):
 
     def vary(self, type):
         block_n = self._block_n
-        if type=="shuffle top2":
+        if type=="swap top 2":
             initial_state=[["a", "b", "d", "c"]]
-        elif type=="shuffle middle2":
+        elif type=="swap middle 2":
             initial_state=[["a", "c", "b", "d"]]
-        elif type=="5blocks":
+        elif type=="5 blocks":
             initial_state=[["a", "b", "c", "d", "e"]]
             block_n = 5
-        elif type=="6blocks":
+        elif type=="6 blocks":
             initial_state=[["a", "b", "c", "d", "e", "f"]]
             block_n = 6
-        elif type=="7blocks":
+        elif type=="7 blocks":
             initial_state=[["a", "b", "c", "d", "e", "f", "g"]]
             block_n = 7
         else:
@@ -342,7 +338,7 @@ class On(BlockWorld):
 def random_initial_state():
     result = [[] for _ in range(self._block_n)]
     all_entities = ["a", "b", "c", "d", "e", "f", "g"][:BLOCK_N]
-    shuffle(all_entities)
+    swap(all_entities)
     for entity in all_entities:
         stack_id = np.random.randint(0, BLOCK_N)
         result[stack_id].append(entity)

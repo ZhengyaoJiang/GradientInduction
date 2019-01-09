@@ -66,7 +66,7 @@ class BaseDILP(object):
         rules_weights = sess.run([rules_weights])[0]
         result = []
         for i, rule_weights in enumerate(rules_weights):
-            weights = softmax([rule_weights])[0]
+            weights = softmax(rule_weights)
             indexes = np.nonzero(weights>threshold)[0]
             for j in range(len(indexes)):
                 result.append((weights[indexes[j]], str(clauses[i][indexes[j]])))
@@ -311,9 +311,11 @@ class RLDILP(BaseDILP):
             print(str(atom)+": "+str(value))
 
 
+
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
-    return np.exp(x) / np.sum(np.exp(x), axis=1)
+    x =  x - np.max(x, axis=0)
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
 
 def prob_sum(x, y):
     return x + y - x*y

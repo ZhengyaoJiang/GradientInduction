@@ -21,27 +21,72 @@ def generalized_test(task, name, algo):
     import tensorflow as tf
     summary = OrderedDict()
     if algo=="DILP":
-        for variation in [""]+list(env.all_variations):
-            tf.reset_default_graph()
-            print("==========="+variation+"==============")
-            result = start_DILP(task, name, "evaluate", variation)
-            pprint(result)
-            variation = "train" if not variation else variation
-            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3),
-                                  "distribution":result["distribution"]}
+        starter = start_DILP
     elif algo=="NN":
-        for variation in [""]+list(env.all_NN_variations):
-            tf.reset_default_graph()
-            print("==========="+variation+"==============")
-            result = start_NN(task, name, "evaluate", variation)
-            pprint(result)
-            variation = "train" if not variation else variation
-            summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3),
-                                  "distribution":result["distribution"]}
+        starter = start_NN
+    elif algo=="Random":
+        starter = start_Random
+
+    for variation in [""]+list(env.all_variations):
+        tf.reset_default_graph()
+        print("==========="+variation+"==============")
+        result = starter(task, name, "evaluate", variation)
+        pprint(result)
+        variation = "train" if not variation else variation
+        summary[variation] = {"mean":round(result["mean"], 3), "std": round(result["std"], 3),
+                              "distribution":result["distribution"]}
     for k,v in summary.items():
         print(k+": "+str(v["mean"])+"+-"+str(v["std"]))
     with open("model/"+name+"/result.json", "wr") as f:
         json.dump(summary, f)
+
+def start_Random(task, name, mode, variation=None):
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    if task == "cliffwalking":
+        man, env = setup_cliffwalking(variation)
+        agent = RandomAgent(env.action_n)
+        discounting = 1.0
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.1, critic=critic, discounting=discounting,
+                                   batched=True, steps=12000, name=name)
+    elif task == "unstack":
+        man, env = setup_unstack(variation)
+        agent = RandomAgent(env.action_n)
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
+                                   batched=True, steps=50000, name=name)
+    elif task == "stack":
+        man, env = setup_stack(variation)
+        agent = RandomAgent(env.action_n)
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
+                                   batched=True, steps=50000, name=name)
+    elif task == "on":
+        man, env = setup_on(variation)
+        agent = RandomAgent(env.action_n)
+        critic = None
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
+                                   batched=True, steps=50000, name=name)
+    elif task == "tictacteo":
+        man, env = setup_tictacteo(variation)
+        agent = RandomAgent(env.action_n)
+        critic = None
+        discounting = 0.9
+        learner = ReinforceLearner(agent, env, 0.02, critic=critic, discounting=discounting,
+                                   steps=120000, name=name)
+
+        #learner = PPOLearner(agent, env, 0.02, critic=critic, discounting=discounting,
+        #                           steps=120000, name=name)
+    else:
+        raise ValueError()
+    if mode == "train":
+        return learner.train()[-1]
+    elif mode == "evaluate":
+        return learner.evaluate()
+    else:
+        raise ValueError()
+
 
 #@ray.remote
 def start_DILP(task, name, mode, variation=None):
@@ -57,11 +102,16 @@ def start_DILP(task, name, mode, variation=None):
         man, env = setup_cliffwalking(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
         discounting = 1.0
-        critic = TableCritic(discounting=discounting, learning_rate=0.1, involve_steps=True)
+        if variation:
+            critic = None
+        else:
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector,
+                                  involve_steps=True)
+        # critic = TableCritic(discounting=discounting, learning_rate=0.1, involve_steps=True)
         # critic = None
         # critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01,
         #                      state2vector=env.state2vector, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic, discounting=discounting,
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic, discounting=discounting,
                                    batched=True, steps=12000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
@@ -70,10 +120,9 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
-            #critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-            # critic = None
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01,
+                                  state2vector=env.state2vector, involve_steps=True)
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
                                    batched=True, steps=50000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
@@ -84,9 +133,9 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            #critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
-            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01,
+                                  state2vector=env.state2vector, involve_steps=True)
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
                                    batched=True, steps=50000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
@@ -99,7 +148,7 @@ def start_DILP(task, name, mode, variation=None):
         else:
             #critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
             critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.1, critic=critic,
+        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
                                    batched=True, steps=50000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
@@ -127,33 +176,50 @@ def start_NN(task, name, mode, variation=None):
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
         #learner = PPOLearner(agent, env, critic=critic)
-        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+
+        if variation:
+            critic = None
+        else:
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
-        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+        if variation:
+            critic = None
+        else:
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         #critic = None
-        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+        # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+        if variation:
+            critic = None
+        else:
+            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
-        critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
+        if variation:
+            critic = None
+        else:
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic,
                                    steps=120000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
-        critic = NeuralCritic([20], env.state_dim, 0.9, learning_rate=0.01, state2vector=env.state2vector)
+        if variation:
+            critic = None
+        else:
+            critic = NeuralCritic([20], env.state_dim, 0.9, learning_rate=0.01, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.01, critic=critic, discounting=0.9,
                                    steps=120000, name=name)
     if mode == "train":
@@ -228,6 +294,9 @@ if __name__ == "__main__":
             else:
                 raise ValueError()
             pprint(starter(args.task, args.name, args.mode))
+        except Exception as e:
+            print(e.message)
+            raise e
         finally:
             generalized_test(args.task, args.name, args.algo)
 

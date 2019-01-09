@@ -4,6 +4,7 @@ from itertools import product
 from core.ilp import *
 from core.clause import *
 from collections import defaultdict
+
 try:
     from itertools import izip_longest
 except Exception:
@@ -146,8 +147,36 @@ class RulesManager():
                     return False
             return True
 
+        def follow_order(clause):
+            symbols = OrderedSet()
+            for atom in clause.atoms:
+                for term in atom.terms:
+                    symbols.add(term)
+            max_v = 0
+            for term in symbols:
+                if isinstance(term, int):
+                    if term>=max_v:
+                        max_v = term
+                    else:
+                        return False
+            return True
+
+        def no_insertion(clause):
+            symbols = OrderedSet()
+            for atom in clause.atoms:
+                for term in atom.terms:
+                    symbols.add(term)
+            symbols = list(symbols)
+            if len(symbols) == max(symbols) - min(symbols)+1:
+                return True
+            else:
+                return False
+
+
+
         for clause in clauses:
-            if not_unsafe(clause) and not_circular(clause) and not_duplicated(clause):
+            if follow_order(clause) and not_unsafe(clause) and no_insertion(clause) \
+                    and not_circular(clause) and not_duplicated(clause):
                 pruned.append(clause)
         return pruned
 
@@ -184,3 +213,63 @@ def fill_array(arr, seq):
     else:
         for subarr, subseq in izip_longest(arr, seq, fillvalue=()):
             fill_array(subarr, subseq)
+
+import collections
+
+class OrderedSet(collections.MutableSet):
+
+    def __init__(self, iterable=None):
+        self.end = end = []
+        end += [None, end, end]         # sentinel node for doubly linked list
+        self.map = {}                   # key --> [key, prev, next]
+        if iterable is not None:
+            self |= iterable
+
+    def __len__(self):
+        return len(self.map)
+
+    def __contains__(self, key):
+        return key in self.map
+
+    def add(self, key):
+        if key not in self.map:
+            end = self.end
+            curr = end[1]
+            curr[2] = end[1] = self.map[key] = [key, curr, end]
+
+    def discard(self, key):
+        if key in self.map:
+            key, prev, next = self.map.pop(key)
+            prev[2] = next
+            next[1] = prev
+
+    def __iter__(self):
+        end = self.end
+        curr = end[2]
+        while curr is not end:
+            yield curr[0]
+            curr = curr[2]
+
+    def __reversed__(self):
+        end = self.end
+        curr = end[1]
+        while curr is not end:
+            yield curr[0]
+            curr = curr[1]
+
+    def pop(self, last=True):
+        if not self:
+            raise KeyError('set is empty')
+        key = self.end[1][0] if last else self.end[2][0]
+        self.discard(key)
+        return key
+
+    def __repr__(self):
+        if not self:
+            return '%s()' % (self.__class__.__name__,)
+        return '%s(%r)' % (self.__class__.__name__, list(self))
+
+    def __eq__(self, other):
+        if isinstance(other, OrderedSet):
+            return len(self) == len(other) and list(self) == list(other)
+        return set(self) == set(other)

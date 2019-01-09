@@ -210,7 +210,7 @@ class Clause():
 
     @property
     def atoms(self):
-        return list(self.body)+[self.head]
+        return [self.head]+list(self.body)
 
     @property
     def variables(self):

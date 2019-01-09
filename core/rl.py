@@ -21,8 +21,10 @@ class ReinforceLearner(object):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         if isinstance(agent, RLDILP):
             self.type = "DILP"
-        else:
+        elif isinstance(agent, NeuralAgent):
             self.type = "NN"
+        else:
+            self.type = "Random"
         self.env = enviornment
         self.agent = agent
         self.state_encoding = agent.state_encoding
@@ -47,8 +49,12 @@ class ReinforceLearner(object):
         self.tf_loss = self.loss(indexed_action_prob)
         #self.tf_loss = tf.Print(self.tf_loss, [self.tf_loss])
         self.optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
-        self.tf_train = self.optimizer.minimize(self.tf_loss, tf.train.get_or_create_global_step(),
-                                                var_list=self.agent.all_variables())
+        try:
+            self.tf_train = self.optimizer.minimize(self.tf_loss, tf.train.get_or_create_global_step(),
+                                                    var_list=self.agent.all_variables())
+        except Exception as e:
+            # For random agent
+            pass
         self.saver = tf.train.Saver()
 
     def loss(self, indexed_action_prob):
@@ -71,7 +77,7 @@ class ReinforceLearner(object):
                                    action_eval / sum_action_eval,
                                    action_eval + (1.0 - sum_action_eval) / float(self.env.action_n))
             self.tf_action_prob = action_prob
-        if self.type == "NN":
+        if self.type == "NN" or self.type=="Random":
             self.tf_action_prob = self.agent.tf_output
 
     def grad(self):
@@ -111,6 +117,11 @@ class ReinforceLearner(object):
                 valuation = None
                 inputs = self.env.state2vector(self.env.state)
                 action_prob = sess.run([self.tf_action_prob], feed_dict={self.agent.tf_input:[inputs]})[0]
+            elif self.type == "Random":
+                indexes = None
+                valuation = None
+                inputs = None
+                action_prob = [np.ones([self.env.action_n])/ self.env.action_n]
             action_prob = action_prob[0]
             action_index = np.random.choice(range(self.env.action_n), p=action_prob)
             if self.state_encoding == "terms":
@@ -137,8 +148,7 @@ class ReinforceLearner(object):
         if self.critic:
             self.critic.batch_learn(state_history, reward_history, sess)
             values = self.critic.get_values(state_history,sess,steps).flatten()
-            advantages = generalized_adv(reward_history, values,
-                                         self.discounting)
+            advantages = generalized_adv(reward_history, values, self.discounting)
             # advantages = np.array(returns) - values
         else:
             advantages = returns
@@ -205,7 +215,7 @@ class ReinforceLearner(object):
             # model definition code goes here
             # and in it call
 
-    def evaluate(self, repeat=200):
+    def evaluate(self, repeat=500):
         results = []
         with tf.Session() as sess:
             self.setup_train(sess)
@@ -228,11 +238,7 @@ class ReinforceLearner(object):
         #additional_discount = np.cumprod(self.discounting*np.ones_like(advnatage))
         #advantage = normalize(advantage)
         additional_discount = np.ones_like(advantage)
-        if self.type == "DILP":
-            log = {"return":final_return[0], "action_history":[str(self.agent.all_actions[action_index])
-                                                          for action_index in action_history]}
-        elif self.type == "NN":
-            log = {"return":final_return[0], "action_history":[str(self.env.all_actions[action_index])
+        log = {"return":final_return[0], "action_history":[str(self.env.all_actions[action_index])
                                                                for action_index in action_history]}
 
         if self.batched:
@@ -250,6 +256,12 @@ class ReinforceLearner(object):
                              self.tf_returns:final_return,
                              self.tf_action_index:np.array(action_history),
                              self.agent.tf_input: np.array(input_vector_history)}
+            elif self.type == "Random":
+                feed_dict = {self.tf_advantage:np.array(advantage),
+                             self.tf_additional_discount:np.array(additional_discount),
+                             self.tf_returns:final_return,
+                             self.tf_action_index:np.array(action_history),
+                             self.agent.tf_input: [np.array(input_vector_history)[:, 0]]}
             result = sess.run(ops, feed_dict)
         else:
             first = True
@@ -380,6 +392,21 @@ class PPOLearner(ReinforceLearner):
                                self.tf_actions_valuation_indexes: [val_index],
                                self.agent.tf_input_valuation: [val]})
         return log
+
+class RandomAgent(object):
+    def __init__(self, action_size):
+        self.tf_input = tf.placeholder(dtype=tf.float32, shape=[None, 1])
+        ones = tf.ones_like(self.tf_input)/ action_size
+        self.tf_output = ones * tf.ones([1, action_size])/ action_size
+        self.state_encoding = "vector"
+
+    def all_variables(self):
+        return []
+
+    def log(self, sess):
+        pass
+
+
 
 class NeuralAgent(object):
     def __init__(self, unit_list, action_size, state_size):

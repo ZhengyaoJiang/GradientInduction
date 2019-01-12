@@ -42,13 +42,13 @@ class CliffWalking(SymbolicEnvironment):
     all_variations = ("top left","top right", "center", "6 by 6", "7 by 7")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT],
+        self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT, LAST],
                                       constants=[str(i) for i in range(width)])
         background = []
         self.unseen_background = []
         self.unseen_background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, width - 1)])
         self.unseen_background.append(Atom(GOAL, [str(width - 1), "0"]))
-        #background.append(Atom(LAST, [str(width - 1)]))
+        background.append(Atom(LAST, [str(width - 1)]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
         background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
                            for j in range(0, width) if i < j])
@@ -160,7 +160,7 @@ class BlockWorld(SymbolicEnvironment):
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
         self.state_dim = MAX_WIDTH**3
         self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
-        self.language = LanguageFrame(actions, extensional=[ON,FLOOR,TOP]+list(additional_predicates),
+        self.language = LanguageFrame(actions, extensional=[ON,FLOOR, TOP]+list(additional_predicates),
                                       constants=self._all_blocks)
         self._additional_predicates = additional_predicates
         background = list(background)
@@ -283,7 +283,7 @@ class Stack(BlockWorld):
         if type=="swap right 2":
             initial_state=[["a"], ["b"], ["d"], ["c"]]
         elif type=="2 columns":
-            initial_state=[["b"], ["a"]], [["c"], ["d"]]
+            initial_state=[["b", "a"], ["c", "d"]]
         elif type=="5 blocks":
             initial_state=[["a"], ["b"], ["c"], ["d"], ["e"]]
             block_n = 5
@@ -300,7 +300,7 @@ class Stack(BlockWorld):
 
 GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
-    all_variations = ("swap top2","swap middle 2", "5 blocks",
+    all_variations = ("swap top 2","swap middle 2", "5 blocks",
                       "6 blocks", "7 blocks")
     def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4):
         super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],

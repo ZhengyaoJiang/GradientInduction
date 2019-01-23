@@ -143,7 +143,13 @@ class RulesManager():
             for pruned_caluse in pruned:
                 if tuple(reversed(pruned_caluse.body)) == clause.body:
                     return False
-                if str(clause)==str(pruned):
+                if str(clause)==str(pruned_caluse):
+                    return False
+            return True
+
+        def not_recursive(clause):
+            for body_atom in clause.body:
+                if body_atom.predicate == clause.head.predicate:
                     return False
             return True
 
@@ -173,10 +179,9 @@ class RulesManager():
                 return False
 
 
-
         for clause in clauses:
             if follow_order(clause) and not_unsafe(clause) and no_insertion(clause) \
-                    and not_circular(clause) and not_duplicated(clause):
+                    and not_circular(clause) and not_duplicated(clause) and not_recursive(clause):
                 pruned.append(clause)
         return pruned
 

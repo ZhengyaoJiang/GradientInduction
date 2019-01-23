@@ -40,9 +40,10 @@ CURRENT = Predicate("current", 2)
 
 class CliffWalking(SymbolicEnvironment):
     all_variations = ("top left","top right", "center", "6 by 6", "7 by 7")
+    nn_variations = ("top left","top right", "center")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
-        self.language = LanguageFrame(actions, extensional=[ZERO, LESS, CURRENT, LAST],
+        self.language = LanguageFrame(actions, extensional=[ZERO, SUCC, CURRENT, LAST],
                                       constants=[str(i) for i in range(width)])
         background = []
         self.unseen_background = []
@@ -50,9 +51,9 @@ class CliffWalking(SymbolicEnvironment):
         self.unseen_background.append(Atom(GOAL, [str(width - 1), "0"]))
         background.append(Atom(LAST, [str(width - 1)]))
         #background.extend([Atom(CLIFF, [str(x), "0"]) for x in range(1, WIDTH-1)])
-        background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
-                           for j in range(0, width) if i < j])
-        #background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
+        #background.extend([Atom(LESS, [str(i), str(j)]) for i in range(0, width)
+        #                   for j in range(0, width) if i < j])
+        background.extend([Atom(SUCC, [str(i), str(i+1)]) for i in range(width - 1)])
         background.append(Atom(ZERO, ["0"]))
         #background.extend([Atom(CLIFF, ["1", str(y)]) for y in range(2, WIDTH)])
         #background.extend([Atom(CLIFF, ["3", str(y)]) for y in range(1, WIDTH-1)])
@@ -154,12 +155,15 @@ class BlockWorld(SymbolicEnvironment):
     """
     state is represented as a list of lists
     """
-    def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=(), block_n=4):
+    def __init__(self, initial_state=INI_STATE, additional_predicates=(), background=(), block_n=4, all_block=False):
         actions = [MOVE]
         self.max_step = 50
         self._block_encoding = {"a":1, "b": 2, "c":3, "d":4, "e": 5, "f":6, "g":7}
         self.state_dim = MAX_WIDTH**3
-        self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
+        if all_block:
+            self._all_blocks = list(string.ascii_lowercase)[:MAX_WIDTH]+["floor"]
+        else:
+            self._all_blocks = list(string.ascii_lowercase)[:block_n]+["floor"]
         self.language = LanguageFrame(actions, extensional=[ON,FLOOR, TOP]+list(additional_predicates),
                                       constants=self._all_blocks)
         self._additional_predicates = additional_predicates
@@ -238,6 +242,7 @@ class Unstack(BlockWorld):
     all_variations = ("swap top 2","2 columns", "5 blocks",
                       "6 blocks", "7 blocks")
 
+    nn_variations = ("swap top 2","2 columns", "5 blocks", "6 blocks", "7 blocks")
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
@@ -269,6 +274,7 @@ class Unstack(BlockWorld):
 class Stack(BlockWorld):
     all_variations = ("swap right 2","2 columns", "5 blocks",
                       "6 blocks", "7 blocks")
+    nn_variations = ("swap right 2","2 columns", "5 blocks", "6 blocks", "7 blocks")
 
     def get_reward(self):
         if self.step >= self.max_step:
@@ -302,9 +308,10 @@ GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
     all_variations = ("swap top 2","swap middle 2", "5 blocks",
                       "6 blocks", "7 blocks")
-    def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4):
+    nn_variations = ("swap top 2","swap middle 2")
+    def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4, all_block=False):
         super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],
-                                 background=[goal_state], block_n=block_n)
+                                 background=[goal_state], block_n=block_n, all_block=all_block)
         self.goal_state = goal_state
 
     def get_reward(self):
@@ -350,6 +357,7 @@ MINE = Predicate("mine", 2)
 EMPTY = Predicate("empty", 2)
 OPPONENT = Predicate("opponent", 2)
 class TicTacTeo(SymbolicEnvironment):
+    all_variations = ("")
     def __init__(self, width=3, know_valid_pos=True):
         actions = [PLACE]
         self.language = LanguageFrame(actions, extensional=[ZERO, MINE, EMPTY, OPPONENT, SUCC],

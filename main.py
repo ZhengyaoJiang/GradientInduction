@@ -26,8 +26,9 @@ def generalized_test(task, name, algo):
         starter = start_NN
     elif algo=="Random":
         starter = start_Random
+    variations = env.all_variations
 
-    for variation in [""]+list(env.all_variations):
+    for variation in [""]+list(variations):
         tf.reset_default_graph()
         print("==========="+variation+"==============")
         result = starter(task, name, "evaluate", variation)
@@ -105,14 +106,14 @@ def start_DILP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = NeuralCritic([30, 10], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector,
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector,
                                   involve_steps=True)
         # critic = TableCritic(discounting=discounting, learning_rate=0.1, involve_steps=True)
         # critic = None
         # critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01,
         #                      state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.05, critic=critic, discounting=discounting,
-                                   batched=True, steps=120000, name=name)
+                                   batched=True, steps=50000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -123,7 +124,7 @@ def start_DILP(task, name, mode, variation=None):
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01,
                                   state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.05, critic=critic,
-                                   batched=True, steps=50000, name=name)
+                                   batched=True, steps=30000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -136,7 +137,7 @@ def start_DILP(task, name, mode, variation=None):
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01,
                                   state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.05, critic=critic,
-                                   batched=True, steps=50000, name=name)
+                                   batched=True, steps=30000, name=name)
         #learner = PPOLearner(agent, env, 0.5, critic=critic, steps=50000, name=name)
     elif task == "on":
         man, env = setup_on(variation)
@@ -149,16 +150,16 @@ def start_DILP(task, name, mode, variation=None):
         else:
             #critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
             # critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-            critic = NeuralCritic([30, 10], env.state_dim, 1.0, learning_rate=0.01,
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001,
                                   state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.05, critic=critic,
-                                   batched=True, steps=50000, name=name)
+                                   batched=True, steps=30000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
         discounting = 0.9
         #critic = TableCritic(discounting, learning_rate=0.2)
-        critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.01, state2vector=env.state2vector)
+        critic = NeuralCritic([20], env.state_dim, discounting, learning_rate=0.001, state2vector=env.state2vector)
         learner = ReinforceLearner(agent, env, 0.02, critic=critic, discounting=discounting,
                                    steps=120000, name=name)
 
@@ -183,23 +184,24 @@ def start_NN(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = None
-            # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
-        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+            # critic = TableCritic(discounting=1.0, learning_rate=0.01, involve_steps=True)
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector)
+        learner = ReinforceLearner(agent, env, 0.002, critic=critic,
                                    steps=120000, name=name)
     elif task == "stack":
-        man, env = setup_stack(variation)
+        man, env = setup_stack(variation, all_block=True)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         if variation:
             critic = None
         else:
             # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
             # critic = None
-            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+            #critic = TableCritic(discounting=1.0, learning_rate=0.01, involve_steps=True)
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector)
+        learner = ReinforceLearner(agent, env, 0.002, critic=critic,
                                    steps=120000, name=name)
     elif task == "unstack":
-        man, env = setup_unstack(variation)
+        man, env = setup_unstack(variation, all_block=True)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         #critic = None
         # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
@@ -207,21 +209,23 @@ def start_NN(task, name, mode, variation=None):
             critic = None
         else:
             # critic = None
-            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+            #critic = TableCritic(discounting=1.0, learning_rate=0.01, involve_steps=True)
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector)
+        learner = ReinforceLearner(agent, env, 0.002, critic=critic,
                                    steps=120000, name=name)
         #learner = PPOLearner(agent, env, 0.5, critic=critic, steps=50000, name=name)
     elif task == "on":
-        man, env = setup_on(variation)
+        man, env = setup_on(variation, all_block=True)
         agent = NeuralAgent([20,10], env.action_n, env.state_dim)
         # critic = TableCritic(1.0)
         if variation:
             critic = None
         else:
             # critic = None
-            critic = TableCritic(discounting=1.0, learning_rate=0.1, involve_steps=True)
+            #critic = TableCritic(discounting=1.0, learning_rate=0.01, involve_steps=True)
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector)
             # critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.01, state2vector=env.state2vector)
-        learner = ReinforceLearner(agent, env, 0.01, critic=critic,
+        learner = ReinforceLearner(agent, env, 0.002, critic=critic,
                                    steps=120000, name=name)
     elif task == "tictacteo":
         man, env = setup_tictacteo(variation)

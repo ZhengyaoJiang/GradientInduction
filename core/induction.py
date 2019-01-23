@@ -49,7 +49,7 @@ class BaseDILP(object):
             result = self.get_predicate_definition(sess, predicate)
             for weight, clause in result:
                 if weight>0.1:
-                    print(str(round(weight, 3))+": "+clause)
+                    pprint(str(round(weight, 3))+": "+clause)
             print("------------------------------------")
             print("differences:")
             if predicate in self.previous_definition:
@@ -59,6 +59,13 @@ class BaseDILP(object):
                         print(str(round(difference, 3))+": "+clause)
             print("=======================================")
             self.previous_definition[predicate] = result
+
+    def get_predicates_definition(self, sess, threshold=0.0):
+        result = {}
+        for predicate in self.rules_manager.all_clauses:
+            result[predicate] = self.get_predicate_definition(sess, predicate, threshold)
+        return result
+
 
     def get_predicate_definition(self, sess, predicate, threshold=0.0):
         clauses = self.rules_manager.all_clauses[predicate]

@@ -82,7 +82,7 @@ class ReinforceLearner(object):
             action_prob = tf.where(sum_action_eval > 1.0,
                                    action_eval / sum_action_eval,
                                    action_eval + (1.0 - sum_action_eval) / float(self.env.action_n))
-            #action_prob = action_eval / sum_action_eval
+            # action_prob = action_eval / sum_action_eval
             self.tf_action_prob = action_prob
         if self.type == "NN" or self.type=="Random":
             self.tf_action_prob = self.agent.tf_output
@@ -136,7 +136,10 @@ class ReinforceLearner(object):
             elif self.state_encoding == "atoms":
                 action = self.agent.all_actions[action_index]
             else:
-                action = self.env.all_actions[action_index]
+                if action_index<len(self.env.all_actions):
+                    action = self.env.all_actions[action_index]
+                else:
+                    action = np.random.choice(self.env.all_actions)
             steps.append(step)
             state_history.append(self.env.state)
             reward, finished = self.env.next_step(action)
@@ -229,10 +232,12 @@ class ReinforceLearner(object):
             # model definition code goes here
             # and in it call
 
-    def evaluate(self, repeat=200):
+    def evaluate(self, repeat=100):
         results = []
         with tf.Session() as sess:
             self.setup_train(sess)
+            self.agent.log(sess)
+            rules = self.agent.get_predicates_definition(sess, threshold=0.05) if self.type == "DILP" else []
             for _ in range(repeat):
                 e = self.sample_episode(sess)
                 reward_history, action_history, action_prob_history, state_history, \
@@ -241,10 +246,10 @@ class ReinforceLearner(object):
         unique, counts = np.unique(results, return_counts=True)
         distribution =  dict(zip(unique, counts))
         return {"distribution": distribution, "mean": np.mean(results), "std": np.std(results),
-                "min": np.min(results), "max": np.max(results)}
+                "min": np.min(results), "max": np.max(results), "rules": rules}
 
     def train_step(self, sess):
-        e = self.minibatch_buffer.next()
+        e = next(self.minibatch_buffer)
         #e = self.sample_episode(sess)
         reward_history, action_history, action_prob_history, state_history,\
             valuation_history, valuation_index_history, input_vector_history,\

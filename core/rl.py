@@ -2,6 +2,7 @@ from core.induction import *
 from core.NTP import *
 from copy import deepcopy
 from collections import namedtuple
+import tensorflow as tf
 import pickle
 
 
@@ -11,13 +12,15 @@ def totuple(a):
     except TypeError:
         return a
 
-Episode = namedtuple("Episode", ["reward_history", "action_history", "action_trajectory_prob", "state_history",
+Episode = namedtuple("Episode", ["reward_history", "action_dist",
+                                 "action_history", "action_trajectory_prob", "state_history",
                "valuation_history", "valuation_index_history", "input_vector_history",
                                  "returns", "steps", "advantages", "final_return"])
 
 class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
-                 steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp", end_by_episode=True,
+                 steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp",
+                 end_by_episode=True,
                  minibatch_size=10):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         if isinstance(agent, RLDILP):
@@ -48,8 +51,9 @@ class ReinforceLearner(object):
         self.tf_additional_discount = tf.placeholder(shape=[None], dtype=tf.float32)
         self.tf_actions_valuation_indexes = tf.placeholder(shape=[None, self.env.action_n], dtype=tf.int32)
         self.tf_action_index = tf.placeholder(shape=[None], dtype=tf.int32)
-        self._construct_action_prob()
-        indexed_action_prob = tf.batch_gather(self.tf_action_prob, self.tf_action_index[:, None])[:, 0]
+        self._construct_action_dist()
+        indexed_action_prob = tf.batch_gather(self.tf_action_dist, self.tf_action_index[:, None])[:, 0]
+        self.tf_action_prob = indexed_action_prob
         self.tf_loss = self.loss(indexed_action_prob)
         #self.tf_loss = tf.Print(self.tf_loss, [self.tf_loss])
         self.tf_gradients = tf.gradients(self.tf_loss, self.agent.all_variables())
@@ -70,7 +74,7 @@ class ReinforceLearner(object):
         #entropy_loss = tf.reduce_sum(self.tf_action_prob*tf.log(self.tf_action_prob))
         return rl_loss#+regularization_loss
 
-    def _construct_action_prob(self):
+    def _construct_action_dist(self):
         """
         this method implements the function $p_a$ in the paper
         """
@@ -79,13 +83,13 @@ class ReinforceLearner(object):
             action_eval = tf.batch_gather(self.agent.tf_result_valuation, self.tf_actions_valuation_indexes)
             self.tf_action_eval = action_eval
             sum_action_eval = tf.tile(tf.reduce_sum(action_eval, axis=1, keepdims=True), [1, self.env.action_n])
-            action_prob = tf.where(sum_action_eval > 1.0,
+            action_dist = tf.where(sum_action_eval > 1.0,
                                    action_eval / sum_action_eval,
                                    action_eval + (1.0 - sum_action_eval) / float(self.env.action_n))
             # action_prob = action_eval / sum_action_eval
-            self.tf_action_prob = action_prob
+            self.tf_action_dist = action_dist
         if self.type == "NN" or self.type=="Random":
-            self.tf_action_prob = self.agent.tf_output
+            self.tf_action_dist = self.agent.tf_output
 
     def grad(self):
         loss_value = self.tf_loss
@@ -98,14 +102,13 @@ class ReinforceLearner(object):
         return tf.gradients(loss_value, self.agent.all_variables())
 
     def sample_episode(self, sess, max_steps=99999):
-        action_prob_history = []
+        action_dist = []
         action_history = []
         reward_history = []
         action_trajectory_prob = []
         valuation_history = []
         state_history = []
         input_vector_history = []
-        excesses = []
         valuation_index_history = []
         steps = []
         step = 0
@@ -117,13 +120,13 @@ class ReinforceLearner(object):
                     valuation = self.agent.base_valuation
                 else:
                     valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state2atoms(self.env.state))
-                action_prob,result = sess.run([self.tf_action_prob, self.agent.tf_result_valuation], feed_dict={self.agent.tf_input_valuation: [valuation],
+                action_prob,result = sess.run([self.tf_action_dist, self.agent.tf_result_valuation], feed_dict={self.agent.tf_input_valuation: [valuation],
                                                                                                                 self.tf_actions_valuation_indexes: [indexes]})
             elif self.type == "NN":
                 indexes = None
                 valuation = None
                 inputs = self.env.state2vector(self.env.state)
-                action_prob = sess.run([self.tf_action_prob], feed_dict={self.agent.tf_input:[inputs]})[0]
+                action_prob = sess.run([self.tf_action_dist], feed_dict={self.agent.tf_input:[inputs]})[0]
             elif self.type == "Random":
                 indexes = None
                 valuation = None
@@ -145,6 +148,7 @@ class ReinforceLearner(object):
             reward, finished = self.env.next_step(action)
             reward_history.append(reward)
             action_history.append(action_index)
+            action_dist.append(action_prob)
             action_trajectory_prob.append(action_prob[action_index])
             valuation_history.append(valuation)
             valuation_index_history.append(indexes)
@@ -158,23 +162,25 @@ class ReinforceLearner(object):
         if self.critic:
             self.critic.batch_learn(state_history, reward_history, sess)
             values = self.critic.get_values(state_history,sess,steps).flatten()
+            #advantages = normalize(generalized_adv(reward_history, values, self.discounting))
             advantages = generalized_adv(reward_history, values, self.discounting)
-            # advantages = np.array(returns) - values
+            #advantages = np.array(returns) - values
         else:
             advantages = returns
         advantages[-1] = 0.0
-        return Episode(reward_history, action_history, action_trajectory_prob, state_history,
+        return Episode(reward_history, action_dist, action_history, action_trajectory_prob, state_history,
                valuation_history, valuation_index_history, input_vector_history,
                        returns, steps, advantages, final_return)
 
     def get_minibatch_buffer(self, sess, batch_size=50, end_by_episode=True):
-        empty_buffer = [[] for _ in range(10)]
+        empty_buffer = [[] for _ in range(11)]
         episode_buffer = deepcopy(empty_buffer)
-        sample_related_indexes = range(10)
+        sample_related_indexes = range(11)
 
         def dump_episode2buffer(episode):
+            # will remove the final step!!!
             for i in sample_related_indexes:
-                episode_buffer[i].extend(episode[i])
+                episode_buffer[i].extend(episode[i][:-1])
 
         def split_buffer(raw_buffer, index):
             if len(episode_buffer[0]) < index:
@@ -192,11 +198,11 @@ class ReinforceLearner(object):
                     e = self.sample_episode(sess)
                     dump_episode2buffer(e)
                     final_return = e.final_return
-                else:
-                    while len(episode_buffer[0]) < batch_size:
-                        e = self.sample_episode(sess)
-                        dump_episode2buffer(e)
-                        final_return = e.final_return
+            if not end_by_episode:
+                while len(episode_buffer[0]) < batch_size:
+                    e = self.sample_episode(sess)
+                    dump_episode2buffer(e)
+                    final_return = e.final_return
             result, episode_buffer = split_buffer(episode_buffer, batch_size)
             yield Episode(*(result+[final_return]))
 
@@ -240,7 +246,7 @@ class ReinforceLearner(object):
             rules = self.agent.get_predicates_definition(sess, threshold=0.05) if self.type == "DILP" else []
             for _ in range(repeat):
                 e = self.sample_episode(sess)
-                reward_history, action_history, action_prob_history, state_history, \
+                reward_history, action_dist, action_history, action_prob_history, state_history, \
                 valuation_history, valuation_index_history, input_vector_history, returns, steps, adv, final_return = e
                 results.append(final_return)
         unique, counts = np.unique(results, return_counts=True)
@@ -251,7 +257,7 @@ class ReinforceLearner(object):
     def train_step(self, sess):
         e = next(self.minibatch_buffer)
         #e = self.sample_episode(sess)
-        reward_history, action_history, action_prob_history, state_history,\
+        reward_history, action_dist, action_history, action_prob_history, state_history,\
             valuation_history, valuation_index_history, input_vector_history,\
             returns, steps, advantage, final_return = e
         #additional_discount = np.cumprod(self.discounting*np.ones_like(advnatage))
@@ -286,7 +292,7 @@ class ReinforceLearner(object):
             first = True
             for action_index, adv, acc_discount, val, val_index in zip(action_history, advantage, additional_discount,
                                                           valuation_history,valuation_index_history):
-                ops = [self.tf_train, self.tf_loss, self.tf_action_prob]
+                ops = [self.tf_train, self.tf_loss, self.tf_action_dist]
                 if first == True and self.name:
                     ops += [tf.contrib.summary.all_summary_ops()]
                     first = False
@@ -328,20 +334,23 @@ class ReinforceLearner(object):
 
 class PPOLearner(ReinforceLearner):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
-                 steps=300, name=None, discounting=1.0, optimizer="RMSProp"):
+                 steps=300, name=None, discounting=1.0, optimizer="RMSProp", target_kl=0.01):
         self.epsilon = 0.2
         self.tf_previous_action_prob = tf.placeholder(tf.float32, shape=[None])
         super(PPOLearner, self).__init__(agent, enviornment, learning_rate, critic,
                                          steps, name, discounting, batched=True, optimizer="RMSProp",
                                          end_by_episode=False, minibatch_size=100)
+        self.tf_previous_action_dist = tf.placeholder(tf.float32, shape=[None, len(self.env.all_actions)])
+        self.tf_kl = tf.reduce_mean(tf.log(self.tf_action_prob) - tf.log(self.tf_previous_action_prob))
         self.log_steps = 10
+        self.target_kl = target_kl
 
 
     def loss(self, new_prob):
         ratio = tf.clip_by_value(new_prob, 1e-5, 1.0) / self.tf_previous_action_prob
-        return -tf.reduce_mean(tf.minimum(ratio*self.tf_advantage,
-                                          tf.clip_by_value(ratio, 1.-self.epsilon, 1.+self.epsilon)*
-                                         self.tf_advantage))
+        min_adv = tf.where(self.tf_advantage > 0, (1 + self.epsilon)*self.tf_advantage,
+                           (1 - self.epsilon)*self.tf_advantage)
+        return -tf.reduce_mean(tf.minimum(ratio*self.tf_advantage,min_adv))
 
     def entropy_loss(self, action_probs):
         entropy = -action_probs*tf.log(tf.clip_by_value(action_probs, 1e-5, 1.0))
@@ -364,25 +373,42 @@ class PPOLearner(ReinforceLearner):
     def train_step(self, sess):
         e = self.minibatch_buffer.next()
         #e = self.sample_episode(sess)
-        reward_history, action_history, action_prob_history, state_history,\
+        reward_history, action_dist, action_history, action_prob_history, state_history,\
             valuation_history, valuation_index_history, input_vector_history,\
             returns, steps, advantage, final_return = e
 
+        advantage = normalize(np.array(advantage))
+
         additional_discount = np.ones_like(advantage)
-        log = {"return":final_return, "action_history":[str(self.agent.all_actions[action_index])
+        log = {"return":final_return, "action_history":[str(self.env.all_actions[action_index])
                                                           for action_index in action_history]}
 
         for j in range(10):
-            ops = [self.tf_train, tf.contrib.summary.all_summary_ops()] if self.name else [self.tf_train]
+            if j == 0 and self.name:
+                ops = [self.tf_kl, self.tf_train, tf.contrib.summary.all_summary_ops()]
+            else:
+                ops = [self.tf_kl, self.tf_train]
             if self.type == "DILP":
                 feed_dict = {self.tf_advantage:np.array(advantage),
                              self.tf_additional_discount:np.array(additional_discount),
                                  self.tf_returns:final_return,
+                                 self.tf_previous_action_dist: action_dist,
                                  self.tf_previous_action_prob: np.array(action_prob_history),
                                  self.tf_action_index:np.array(action_history),
                                  self.tf_actions_valuation_indexes: np.array(valuation_index_history),
                                  self.agent.tf_input_valuation: np.array(valuation_history)}
+            elif self.type == "NN":
+                feed_dict = {self.tf_advantage:np.array(advantage),
+                             self.tf_additional_discount:np.array(additional_discount),
+                             self.tf_returns:final_return,
+                             self.tf_previous_action_dist: action_dist,
+                             self.tf_action_index:np.array(action_history),
+                             self.tf_previous_action_prob: np.array(action_prob_history),
+                             self.agent.tf_input: np.array(input_vector_history)}
             result = sess.run(ops, feed_dict)
+            if result[0] > self.target_kl:
+                print("early stop")
+                break
         return log
 
 class RandomAgent(object):
@@ -397,8 +423,6 @@ class RandomAgent(object):
 
     def log(self, sess):
         pass
-
-
 
 class NeuralAgent(object):
     def __init__(self, unit_list, action_size, state_size):
@@ -530,6 +554,8 @@ def normalize(scalars):
     return (scalars - mean)/std
 
 def generalized_adv(rewards, values, discounting, lam=0.95):
+    #deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+    #self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
     values[-1] = rewards[-1]
     deltas = rewards[:-1] + discounting * values[1:] - values[:-1]
     return np.concatenate([discount(deltas, discounting*lam), [0]], axis=0)

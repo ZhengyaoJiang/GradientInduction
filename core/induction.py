@@ -318,6 +318,34 @@ class RLDILP(BaseDILP):
             print(str(atom)+": "+str(value))
 
 
+class HybirdAgent(RLDILP):
+    def __init__(self, rules_manager, env, unit_list, state_size, independent_clause=True):
+        self.unit_list = unit_list
+        self.state_size = state_size
+        super(HybirdAgent, self).__init__(rules_manager, env.background, independent_clause,
+                                          state_encoding="vector")
+
+
+
+    def _construct_graph(self):
+        self.tf_input = tf.placeholder(dtype=tf.float32, shape=[None, self.state_size])
+        outputs = self.tf_input
+        with tf.variable_scope("p_S"):
+            for unit_n in self.unit_list:
+                outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.relu,)
+            outputs = tf.layers.dense(outputs, self.base_valuation.shape[0], activation=tf.nn.softmax)
+        self.tf_input_valuation = self.base_valuation+outputs
+        self.tf_result_valuation = self._construct_deduction()
+
+    def deduction(self, state=None, session=None):
+        # takes background as input and return a valuation of target ground atoms
+        if session:
+            result = session.run([self.tf_result_valuation], feed_dict={self.tf_input:[state]})[0]
+        else:
+            with tf.Session() as sess:
+                result = sess.run([self.tf_result_valuation], feed_dict={self.tf_input:[state]})[0]
+        return result[0]
+
 
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""

@@ -356,7 +356,7 @@ PLACE = Predicate("place", 2)
 MINE = Predicate("mine", 2)
 EMPTY = Predicate("empty", 2)
 OPPONENT = Predicate("opponent", 2)
-class TicTacTeo(SymbolicEnvironment):
+class TicTacToe(SymbolicEnvironment):
     all_variations = ("")
     def __init__(self, width=3, know_valid_pos=True):
         actions = [PLACE]
@@ -369,7 +369,7 @@ class TicTacTeo(SymbolicEnvironment):
         background.append(Atom(ZERO, ["0"]))
         self.max_step = 50
         initial_state = np.zeros([3,3])
-        super(TicTacTeo, self).__init__(background, initial_state, actions)
+        super(TicTacToe, self).__init__(background, initial_state, actions)
         self.width = width
         self.all_positions = [(i, j) for i in range(width) for j in range(width)]
         self.know_valid_pos = know_valid_pos

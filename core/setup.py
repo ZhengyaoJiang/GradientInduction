@@ -180,8 +180,8 @@ def setup_on(variation=None, templete="reduced", all_block=False):
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_tictacteo(variation=None):
-    env = TicTacTeo()
+def setup_tictactoe(variation=None):
+    env = TicTacToe()
     if variation:
         env = env.vary(variation)
     maintemp = [RuleTemplate(1, True)]

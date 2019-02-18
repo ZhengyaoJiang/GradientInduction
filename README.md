@@ -1,4 +1,4 @@
-# GradientInduction
+# LogicRL
 Implementaion of Neural Logic Reinforcement learning and several benchmarks.
 Developed in python2.7, Linux enviornment.
 

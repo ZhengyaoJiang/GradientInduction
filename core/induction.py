@@ -260,9 +260,9 @@ class RLDILP(BaseDILP):
         super(RLDILP, self).__init__(rules_manager, env.background, independent_clause)
         self.env = env
         self.state_encoding=state_encoding
-        if self.state_encoding=="atoms":
+        if self.state_encoding=="atoms" or self.state_encoding=="vector":
             self.all_actions = self.get_all_actions()
-        else:
+        elif self.state_encoding=="terms":
             self.all_actions = self.env.actions
 
     def get_all_actions(self):
@@ -318,23 +318,23 @@ class RLDILP(BaseDILP):
             print(str(atom)+": "+str(value))
 
 
-class HybirdAgent(RLDILP):
+class HybridAgent(RLDILP):
     def __init__(self, rules_manager, env, unit_list, state_size, independent_clause=True):
         self.unit_list = unit_list
         self.state_size = state_size
-        super(HybirdAgent, self).__init__(rules_manager, env.background, independent_clause,
+        super(HybridAgent, self).__init__(rules_manager, env, independent_clause,
                                           state_encoding="vector")
 
-
-
     def _construct_graph(self):
+        self.extensional_onehot = np.zeros_like(self.base_valuation)
+        self.extensional_onehot[self.rules_manager.extensional_indexes] = 1.0
         self.tf_input = tf.placeholder(dtype=tf.float32, shape=[None, self.state_size])
         outputs = self.tf_input
         with tf.variable_scope("p_S"):
             for unit_n in self.unit_list:
-                outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.relu,)
-            outputs = tf.layers.dense(outputs, self.base_valuation.shape[0], activation=tf.nn.softmax)
-        self.tf_input_valuation = self.base_valuation+outputs
+                outputs = tf.layers.dense(outputs, unit_n, activation=tf.nn.sigmoid)
+            outputs = tf.layers.dense(outputs, self.base_valuation.shape[0], activation=tf.nn.sigmoid)
+        self.tf_input_valuation = prob_sum(self.base_valuation, outputs*self.extensional_onehot)
         self.tf_result_valuation = self._construct_deduction()
 
     def deduction(self, state=None, session=None):
@@ -345,6 +345,9 @@ class HybirdAgent(RLDILP):
             with tf.Session() as sess:
                 result = sess.run([self.tf_result_valuation], feed_dict={self.tf_input:[state]})[0]
         return result[0]
+
+    def log(self, sess):
+        self.show_definition(sess)
 
 
 def softmax(x):

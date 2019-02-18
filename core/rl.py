@@ -23,7 +23,9 @@ class ReinforceLearner(object):
                  end_by_episode=True,
                  minibatch_size=10):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
-        if isinstance(agent, RLDILP):
+        if isinstance(agent, HybridAgent):
+            self.type = "Hybrid"
+        elif isinstance(agent, RLDILP):
             self.type = "DILP"
         elif isinstance(agent, NeuralAgent):
             self.type = "NN"
@@ -78,7 +80,7 @@ class ReinforceLearner(object):
         """
         this method implements the function $p_a$ in the paper
         """
-        if self.type == "DILP":
+        if self.type == "DILP" or self.type == "Hybrid":
             # slice the action valuations from the valuation vectors
             action_eval = tf.batch_gather(self.agent.tf_result_valuation, self.tf_actions_valuation_indexes)
             self.tf_action_eval = action_eval
@@ -113,15 +115,23 @@ class ReinforceLearner(object):
         steps = []
         step = 0
         while step<max_steps:
-            if self.type == "DILP":
-                indexes = self.agent.get_valuation_indexes(self.env.state2atoms(self.env.state))
+            if self.type == "Hybrid":
+                indexes = self.agent.get_valuation_indexes()
+                inputs = self.env.state2vector(self.env.state)
+                action_prob, valuation = sess.run([self.tf_action_dist, self.agent.tf_input_valuation],
+                                       feed_dict={self.agent.tf_input:[inputs],
+                                                  self.tf_actions_valuation_indexes: [indexes]})
+                valuation = valuation[0]
+            elif self.type == "DILP":
+                indexes = self.agent.get_valuation_indexes()
                 inputs = None # inputs are needed only for neural network models, so this is none
                 if self.state_encoding=="terms":
                     valuation = self.agent.base_valuation
                 else:
                     valuation = self.agent.base_valuation + self.agent.axioms2valuation(self.env.state2atoms(self.env.state))
-                action_prob,result = sess.run([self.tf_action_dist, self.agent.tf_result_valuation], feed_dict={self.agent.tf_input_valuation: [valuation],
-                                                                                                                self.tf_actions_valuation_indexes: [indexes]})
+                action_prob,result = sess.run([self.tf_action_dist, self.agent.tf_result_valuation],
+                                              feed_dict={self.agent.tf_input_valuation: [valuation],
+                                              self.tf_actions_valuation_indexes: [indexes]})
             elif self.type == "NN":
                 indexes = None
                 valuation = None
@@ -268,7 +278,14 @@ class ReinforceLearner(object):
 
         if self.batched:
             ops = [self.tf_train, tf.contrib.summary.all_summary_ops(), self.tf_gradients] if self.name else [self.tf_train]
-            if self.type == "DILP":
+            if self.type == "Hybrid":
+                feed_dict = {self.tf_advantage:np.array(advantage),
+                             self.tf_additional_discount:np.array(additional_discount),
+                                 self.tf_returns:final_return,
+                                 self.tf_action_index:np.array(action_history),
+                                 self.tf_actions_valuation_indexes: np.array(valuation_index_history),
+                                 self.agent.tf_input: np.array(input_vector_history)}
+            elif self.type == "DILP":
                 feed_dict = {self.tf_advantage:np.array(advantage),
                              self.tf_additional_discount:np.array(additional_discount),
                                  self.tf_returns:final_return,
@@ -397,6 +414,15 @@ class PPOLearner(ReinforceLearner):
                                  self.tf_action_index:np.array(action_history),
                                  self.tf_actions_valuation_indexes: np.array(valuation_index_history),
                                  self.agent.tf_input_valuation: np.array(valuation_history)}
+            elif self.type == "Hybrid":
+                feed_dict = {self.tf_advantage: np.array(advantage),
+                         self.tf_additional_discount: np.array(additional_discount),
+                         self.tf_returns: final_return,
+                         self.tf_previous_action_dist: action_dist,
+                         self.tf_previous_action_prob: np.array(action_prob_history),
+                         self.tf_action_index: np.array(action_history),
+                         self.tf_actions_valuation_indexes: np.array(valuation_index_history),
+                         self.agent.tf_input: np.array(input_vector_history)}
             elif self.type == "NN":
                 feed_dict = {self.tf_advantage:np.array(advantage),
                              self.tf_additional_discount:np.array(additional_discount),
@@ -551,7 +577,7 @@ def discount(r, discounting):
 
 def normalize(scalars):
     mean, std = np.mean(scalars), np.std(scalars)
-    return (scalars - mean)/std
+    return (scalars - mean)/(std+1e-8)
 
 def generalized_adv(rewards, values, discounting, lam=0.95):
     #deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]

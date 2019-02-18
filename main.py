@@ -86,10 +86,9 @@ def start_Random(task, name, mode, variation=None):
 
 def start_Hybird(task, name, mode, variation=None):
     import os
-    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     if task == "cliffwalking":
-        man, env = setup_cliffwalking(variation)
-        agent = HybirdAgent(man, env, [20], env.state_dim)
+        man, env = setup_cliffwalking(variation, False)
+        agent = HybridAgent(man, env, [20], env.state_dim)
         discounting = 1.0
         if variation:
             critic = None
@@ -99,15 +98,16 @@ def start_Hybird(task, name, mode, variation=None):
         learner = ReinforceLearner(agent, env, 0.05, critic=critic, discounting=discounting,
                                    batched=True, steps=50000, name=name)
     elif task == "unstack":
-        man, env = setup_unstack(variation)
-        agent = RLDILP(man, env, state_encoding="atoms")
+        man, env = setup_unstack(variation, "main")
+        agent = HybridAgent(man, env, [20], env.state_dim)
         if variation:
             critic = None
         else:
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001,
                                   state2vector=env.state2vector, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
-                                   batched=True, steps=30000, name=name)
+        #learner = ReinforceLearner(agent, env, 0.05, critic=critic,
+        #                           batched=True, steps=30000, name=name)
+        learner = PPOLearner(agent, env, 0.01, critic=critic, steps=120000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -161,8 +161,9 @@ def start_DILP(task, name, mode, variation=None):
         else:
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001, state2vector=env.state2vector,
                                   involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.05, critic=critic, discounting=discounting,
-                                   batched=True, steps=50000, name=name)
+        #learner = ReinforceLearner(agent, env, 0.05, critic=critic, discounting=discounting,
+        #                           batched=True, steps=50000, name=name)
+        learner = PPOLearner(agent, env, 0.05, critic=critic, steps=120000, name=name)
     elif task == "unstack":
         man, env = setup_unstack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -171,8 +172,7 @@ def start_DILP(task, name, mode, variation=None):
         else:
             critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001,
                                   state2vector=env.state2vector, involve_steps=True)
-        learner = ReinforceLearner(agent, env, 0.05, critic=critic,
-                                   batched=True, steps=30000, name=name)
+        learner = PPOLearner(agent, env, 0.05, critic=critic, steps=120000, name=name)
     elif task == "stack":
         man, env = setup_stack(variation)
         agent = RLDILP(man, env, state_encoding="atoms")
@@ -293,6 +293,8 @@ if __name__ == "__main__":
                 starter = start_DILP
             elif args.algo == "NN":
                 starter = start_NN
+            elif args.algo == "Hybird":
+                starter = start_Hybird
             else:
                 raise ValueError()
             pprint(starter(args.task, args.name, args.mode))

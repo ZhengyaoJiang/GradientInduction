@@ -23,6 +23,7 @@ class RulesManager():
         self.__init_all_clauses()
         self.deduction_matrices =defaultdict(list) # dictionary of predicate to list of lists of deduction matrices.
         self.__init_deduction_matrices()
+        self.extensional_indexes = self.__find_extensional_indexes()
 
     def __init_all_clauses(self):
         intensionals = self.__language.target + self.program_template.auxiliary
@@ -127,6 +128,13 @@ class RulesManager():
             self.all_grounds += grounds
             end = len(self.all_grounds)
             self.__predicate_mapping[predicate] = list(range(start, end))
+
+    def __find_extensional_indexes(self):
+        indexes = []
+        for i,atom in enumerate(self.all_grounds):
+            if atom.predicate in self.__language.extensional:
+                indexes.append(i)
+        return indexes
 
     @staticmethod
     def prune(clauses):

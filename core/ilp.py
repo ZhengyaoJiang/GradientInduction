@@ -21,10 +21,12 @@ class ILP():
 class LanguageFrame():
     def __init__(self, target, extensional, constants):
         '''
-        :param target: string, target predicate
+        :param target: target predicate, list of target predicates
         :param extensional: list of Predicates, extensional predicates and their arity
         :param constants: list of strings, constants
         '''
+        if not isinstance(target, list):
+            target = [target]
         self.target = target
         self.extensional = extensional
         self.constants = constants

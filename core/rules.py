@@ -4,12 +4,17 @@ from itertools import product
 from core.ilp import *
 from core.clause import *
 from collections import defaultdict
-from itertools import izip_longest
+
+try:
+    from itertools import izip_longest
+except Exception:
+    from itertools import zip_longest as izip_longest
 
 class RulesManager():
-    def __init__(self, language_frame, program_template):
+    def __init__(self, language_frame, program_template, independent_clause=True):
         self.__language = language_frame
         self.program_template = program_template
+        self.independent_clause = independent_clause
 
         self.__predicate_mapping = {} # map from predicate to ground atom indices
         self.all_grounds = []
@@ -20,12 +25,19 @@ class RulesManager():
         self.__init_deduction_matrices()
 
     def __init_all_clauses(self):
-        intensionals = [self.__language.target] + self.program_template.auxiliary
-        for intensional in intensionals:
-            self.all_clauses[intensional].append(self.generate_clauses(intensional,
-                                                                       self.program_template.rule_temps[intensional][0]))
-            self.all_clauses[intensional].append(self.generate_clauses(intensional,
-                                                                       self.program_template.rule_temps[intensional][1]))
+        intensionals = self.__language.target + self.program_template.auxiliary
+        if self.independent_clause:
+            for intensional in intensionals:
+                for i in range(len(self.program_template.rule_temps[intensional])):
+                    self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                               self.program_template.rule_temps[
+                                                                                   intensional][i]))
+        else:
+            for intensional in intensionals:
+                self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                           self.program_template.rule_temps[intensional][0]))
+                self.all_clauses[intensional].append(self.generate_clauses(intensional,
+                                                                           self.program_template.rule_temps[intensional][1]))
 
     def __init_deduction_matrices(self):
         for intensional, clauses in self.all_clauses.items():
@@ -42,9 +54,10 @@ class RulesManager():
 
         body_variable = tuple(range(intensional.arity+rule_template.variables_n))
         if rule_template.allow_intensional:
-            predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)).union(set([intensional])))
+            predicates = list(set(self.program_template.auxiliary).union((self.__language.extensional)))
+            # .union(set([intensional])))
         else:
-            predicates = [self.__language.extensional]
+            predicates = self.__language.extensional
         terms = []
         for predicate in predicates:
             body_variables = [body_variable for _ in range(predicate.arity)]
@@ -98,14 +111,14 @@ class RulesManager():
         for combination in all_constants_combination:
             all_match.append({free_variables[i]:constant for i,constant in enumerate(combination)})
         for match in all_match:
-            result.append((self.find_index(free_body[0].replace(match)),
-                           self.find_index(free_body[1].replace(match))))
+            result.append((self.find_index(free_body[0].replace_terms(match)),
+                           self.find_index(free_body[1].replace_terms(match))))
         return result
 
     def __generate_grounds(self):
         self.all_grounds.append(Atom(Predicate("Empty", 0), []))
         self.__predicate_mapping[Predicate("Empty", 0)] = [0]
-        all_predicates = self.__language.extensional+[self.__language.target]+self.program_template.auxiliary
+        all_predicates = self.__language.extensional+self.__language.target+self.program_template.auxiliary
         for predicate in all_predicates:
             constant = self.__language.constants
             constants = [constant for _ in range(predicate.arity)]
@@ -128,12 +141,42 @@ class RulesManager():
 
         def not_duplicated(clause):
             for pruned_caluse in pruned:
-                if reversed(pruned_caluse.body) == clause.body:
+                if tuple(reversed(pruned_caluse.body)) == clause.body:
+                    return False
+                if str(clause)==str(pruned):
                     return False
             return True
 
+        def follow_order(clause):
+            symbols = OrderedSet()
+            for atom in clause.atoms:
+                for term in atom.terms:
+                    symbols.add(term)
+            max_v = 0
+            for term in symbols:
+                if isinstance(term, int):
+                    if term>=max_v:
+                        max_v = term
+                    else:
+                        return False
+            return True
+
+        def no_insertion(clause):
+            symbols = OrderedSet()
+            for atom in clause.atoms:
+                for term in atom.terms:
+                    symbols.add(term)
+            symbols = list(symbols)
+            if len(symbols) == max(symbols) - min(symbols)+1:
+                return True
+            else:
+                return False
+
+
+
         for clause in clauses:
-            if not_unsafe(clause) and not_circular(clause) and not_duplicated(clause):
+            if follow_order(clause) and not_unsafe(clause) and no_insertion(clause) \
+                    and not_circular(clause) and not_duplicated(clause):
                 pruned.append(clause)
         return pruned
 
@@ -171,3 +214,62 @@ def fill_array(arr, seq):
         for subarr, subseq in izip_longest(arr, seq, fillvalue=()):
             fill_array(subarr, subseq)
 
+import collections
+
+class OrderedSet(collections.MutableSet):
+
+    def __init__(self, iterable=None):
+        self.end = end = []
+        end += [None, end, end]         # sentinel node for doubly linked list
+        self.map = {}                   # key --> [key, prev, next]
+        if iterable is not None:
+            self |= iterable
+
+    def __len__(self):
+        return len(self.map)
+
+    def __contains__(self, key):
+        return key in self.map
+
+    def add(self, key):
+        if key not in self.map:
+            end = self.end
+            curr = end[1]
+            curr[2] = end[1] = self.map[key] = [key, curr, end]
+
+    def discard(self, key):
+        if key in self.map:
+            key, prev, next = self.map.pop(key)
+            prev[2] = next
+            next[1] = prev
+
+    def __iter__(self):
+        end = self.end
+        curr = end[2]
+        while curr is not end:
+            yield curr[0]
+            curr = curr[2]
+
+    def __reversed__(self):
+        end = self.end
+        curr = end[1]
+        while curr is not end:
+            yield curr[0]
+            curr = curr[1]
+
+    def pop(self, last=True):
+        if not self:
+            raise KeyError('set is empty')
+        key = self.end[1][0] if last else self.end[2][0]
+        self.discard(key)
+        return key
+
+    def __repr__(self):
+        if not self:
+            return '%s()' % (self.__class__.__name__,)
+        return '%s(%r)' % (self.__class__.__name__, list(self))
+
+    def __eq__(self, other):
+        if isinstance(other, OrderedSet):
+            return len(self) == len(other) and list(self) == list(other)
+        return set(self) == set(other)

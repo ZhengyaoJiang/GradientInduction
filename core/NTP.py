@@ -4,9 +4,9 @@ import itertools
 import tensorflow as tf
 import tensorflow.contrib.eager as tfe
 import copy
-from numba import jit
 import pandas as pd
 from core.clause import is_variable, Clause, Atom, Predicate
+from typing import List, Union, Optional, Tuple
 
 from collections import namedtuple
 EMBEDDING_LENGTH = 5 # embedding vector length
@@ -17,6 +17,20 @@ substitution is list of dictionaries.
 score is a vector (Tensor) representing the sucessness scores of the proof.
 """
 FAIL = ProofState(None, 0)
+
+
+class NTPRLWrapper():
+    def __init__(self, ntp):
+        pass
+
+    def decide(self, state: Union[List[Atom], List[List[Atom]]])->tf.Tensor:
+        """
+        :param state: list of atoms or batched lists of atoms,
+            containing information about both the state and background knowledge
+        :return: action distribution
+        """
+        pass
+
 
 def substitute(atom, substitutions):
     """

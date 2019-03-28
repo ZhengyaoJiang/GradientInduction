@@ -2,7 +2,7 @@ from __future__ import print_function, division, absolute_import
 from core.clause import *
 from core.ilp import LanguageFrame
 import copy
-from random import choice
+from random import choice,random
 
 
 class SymbolicEnvironment(object):
@@ -40,7 +40,7 @@ CURRENT = Predicate("current", 2)
 
 class CliffWalking(SymbolicEnvironment):
     all_variations = ("top left","top right", "center", "6 by 6", "7 by 7")
-    nn_variations = ("top left","top right", "center")
+    nn_variations = ("top left","top right", "center", "6 by 6", "7 by 7")
     def __init__(self, initial_state=("0", "0"), width=5):
         actions = [UP, DOWN, LEFT, RIGHT]
         self.language = LanguageFrame(actions, extensional=[ZERO, SUCC, CURRENT, LAST],
@@ -140,6 +140,28 @@ class CliffWalking(SymbolicEnvironment):
             raise ValueError
         return CliffWalking(initial_state, width)
 
+class WindyCliffWalking(CliffWalking):
+    def next_step(self, action):
+        x = int(self._state[0])
+        y = int(self._state[1])
+        self.step+=1
+        reward, finished = self.get_reward()
+        self.acc_reward += reward
+
+        if isinstance(action, Atom):
+            action = action.predicate
+        if random() < 0.1:
+            action = DOWN
+        if action == UP and y<self.width-1:
+            self._state = (str(x), str(y+1))
+        elif action == DOWN and y>0:
+            self._state = (str(x), str(y-1))
+        elif action == LEFT and x>0:
+            self._state = (str(x-1), str(y))
+        elif action == RIGHT and x<self.width-1:
+            self._state = (str(x+1), str(y))
+        return reward, finished
+
 ON = Predicate("on", 2)
 TOP = Predicate("top", 1)
 MOVE = Predicate("move", 2)
@@ -148,7 +170,7 @@ INI_STATE2 = [["a"], ["b"], ["c"], ["d"]]
 FLOOR = Predicate("floor", 1)
 BLOCK = Predicate("block", 1)
 CLEAR = Predicate("clear", 1)
-MAX_WIDTH = 7
+MAX_WIDTH = 4
 
 import string
 class BlockWorld(SymbolicEnvironment):
@@ -216,10 +238,10 @@ class BlockWorld(SymbolicEnvironment):
 
     @property
     def action_n(self):
-        return (self._block_n+1)**2
+        return len(self._all_blocks)**2
 
     def state2vector(self, state):
-        matrix = np.zeros([MAX_WIDTH, MAX_WIDTH, MAX_WIDTH])
+        matrix = np.zeros([MAX_WIDTH, MAX_WIDTH, MAX_WIDTH], dtype=np.float32)
         for i, stack in enumerate(state):
             for j, block in enumerate(stack):
                 matrix[i][j][self._block_encoding[block]-1] = 1.0
@@ -242,7 +264,8 @@ class Unstack(BlockWorld):
     all_variations = ("swap top 2","2 columns", "5 blocks",
                       "6 blocks", "7 blocks")
 
-    nn_variations = ("swap top 2","2 columns", "5 blocks", "6 blocks", "7 blocks")
+    nn_variations = ("swap top 2","2 columns", "5 blocks", "6 blocks", "7 blocks") if MAX_WIDTH==7 else \
+        ("swap top 2", "2 columns")
     def get_reward(self):
         if self.step >= self.max_step:
             return -0.0, True
@@ -274,7 +297,8 @@ class Unstack(BlockWorld):
 class Stack(BlockWorld):
     all_variations = ("swap right 2","2 columns", "5 blocks",
                       "6 blocks", "7 blocks")
-    nn_variations = ("swap right 2","2 columns", "5 blocks", "6 blocks", "7 blocks")
+    nn_variations = ("swap right 2","2 columns", "5 blocks", "6 blocks", "7 blocks") if MAX_WIDTH==7 else \
+        ("swap right 2", "2 columns")
 
     def get_reward(self):
         if self.step >= self.max_step:
@@ -308,7 +332,8 @@ GOAL_ON = Predicate("goal_on", 2)
 class On(BlockWorld):
     all_variations = ("swap top 2","swap middle 2", "5 blocks",
                       "6 blocks", "7 blocks")
-    nn_variations = ("swap top 2","swap middle 2")
+    nn_variations = ("swap top 2","swap middle 2", "5 blocks", "6 blocks", "7 blocks") if MAX_WIDTH==7 else \
+        ("swap top 2", "swap middle 2")
     def __init__(self, initial_state=INI_STATE, goal_state=Atom(GOAL_ON, ["a", "b"]), block_n=4, all_block=False):
         super(On, self).__init__(initial_state, additional_predicates=[GOAL_ON],
                                  background=[goal_state], block_n=block_n, all_block=all_block)

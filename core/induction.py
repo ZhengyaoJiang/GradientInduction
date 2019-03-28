@@ -1,7 +1,7 @@
 from __future__ import print_function, division, absolute_import
 import numpy as np
 import tensorflow as tf
-from collections import OrderedDict
+from collections import OrderedDict,defaultdict
 import pandas as pd
 import tensorflow.contrib.eager as tfe
 import os
@@ -46,37 +46,40 @@ class BaseDILP(object):
         for predicate in self.rules_manager.all_clauses:
             print()
             print(predicate)
-            result = self.get_predicate_definition(sess, predicate)
-            for weight, clause in result:
-                if weight>0.1:
-                    pprint(str(round(weight, 3))+": "+clause)
+            cs_defs = self.get_predicate_definition(sess, predicate)
+            for _, c_defs in cs_defs.items():
+                for clause, weight in c_defs.items():
+                    if weight>0.1:
+                        pprint(str(round(weight, 3))+": "+clause)
             print("------------------------------------")
             print("differences:")
             if predicate in self.previous_definition:
-                for i,(weight, clause) in enumerate(result):
-                    difference = weight - self.previous_definition[predicate][i][0]
-                    if abs(difference)>1e-3:
-                        print(str(round(difference, 3))+": "+clause)
+                for i,c_defs in cs_defs.items():
+                    for clause, weight  in c_defs.items():
+                        difference = weight - self.previous_definition[predicate][i][clause]
+                        if abs(difference)>1e-3:
+                            print(str(round(difference, 3))+": "+clause)
             print("=======================================")
-            self.previous_definition[predicate] = result
+            self.previous_definition[predicate] = cs_defs
 
     def get_predicates_definition(self, sess, threshold=0.0):
         result = {}
         for predicate in self.rules_manager.all_clauses:
-            result[predicate] = self.get_predicate_definition(sess, predicate, threshold)
+            clauses_definitions = self.get_predicate_definition(sess, predicate, threshold)
+            for i,clause_definitions in clauses_definitions.items():
+                result[predicate.name+"#"+str(i+1)] = clause_definitions
         return result
-
 
     def get_predicate_definition(self, sess, predicate, threshold=0.0):
         clauses = self.rules_manager.all_clauses[predicate]
         rules_weights = self.rule_weights[predicate]
         rules_weights = sess.run([rules_weights])[0]
-        result = []
+        result = defaultdict(dict)
         for i, rule_weights in enumerate(rules_weights):
             weights = softmax(rule_weights)
             indexes = np.nonzero(weights>threshold)[0]
             for j in range(len(indexes)):
-                result.append((weights[indexes[j]], str(clauses[i][indexes[j]])))
+                result[i][str(clauses[i][indexes[j]])] = float(weights[indexes[j]])
         return result
 
 
@@ -227,7 +230,7 @@ class SupervisedDILP(BaseDILP):
 
         if name:
             checkpoint = tf.train.Checkpoint(**str2weights)
-            checkpoint_dir = "./model/"+name
+            checkpoint_dir = "./modelArxivICML/"+name
             checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
             try:
                 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
@@ -300,7 +303,7 @@ class RLDILP(BaseDILP):
     def create_checkpoint(self, name):
         if name:
             checkpoint = tfe.Checkpoint(**self.get_str2weights())
-            checkpoint_dir = "./model/"+name
+            checkpoint_dir = "./modelArxivICML/"+name
             checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
             try:
                 checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))

@@ -122,32 +122,6 @@ def setup_windycliffwalking(variation=None, invented=True):
     man = RulesManager(env.language, program_temp)
     return man, env
 
-def setup_unstack(variation=None, templete="full", all_block=False):
-    env = Unstack(all_block=all_block)
-    if variation:
-        env = env.vary(variation)
-    maintemp = [RuleTemplate(1, True)]
-    inventedtemp = [RuleTemplate(1, True)]
-    inventedtemp2 = [RuleTemplate(1, True)]
-    inventedtemp_2extential = [RuleTemplate(2, False)]
-    invented = Predicate("invented", 2)
-    invented4 = Predicate("invented4", 2)
-    invented2 = Predicate("invented2", 1)
-    invented3 = Predicate("invented3", 1)
-    if templete=="full":
-        program_temp = ProgramTemplate([invented, invented3, invented2, invented4],
-                                                          {
-                                                           invented3: inventedtemp2,
-                                                           invented: inventedtemp_2extential,
-                                                           invented4: inventedtemp2,
-                                                           invented2: inventedtemp_2extential,
-                                                           MOVE: maintemp,
-                                                           }, 4)
-    elif templete=="main":
-        program_temp = ProgramTemplate([],{MOVE: maintemp}, 1)
-    man = RulesManager(env.language, program_temp)
-    return man, env
-
 def setup_stack(variation=None, templete="reduced", all_block=False):
     env = Stack(initial_state=INI_STATE2, all_block=all_block)
     if variation:

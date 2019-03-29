@@ -6,6 +6,8 @@ import tensorflow.contrib.eager as tfe
 import copy
 import pandas as pd
 from core.clause import is_variable, Clause, Atom, Predicate
+from sntp.models import NTP
+from sntp.kernels import RBFKernel
 from typing import List, Union, Optional, Tuple
 
 from collections import namedtuple
@@ -18,47 +20,109 @@ score is a vector (Tensor) representing the sucessness scores of the proof.
 """
 FAIL = ProofState(None, 0)
 
+class Embeddings():
+    def __init__(self, predicates, para_predicates, constants, dimension=20):
+        self.predicates = set(predicates)
+        self.constants = set(constants)
+        self.para_predicates = set(para_predicates)
+        self.embeddings = {}
+        for predicate in predicates.union(para_predicates):
+            self.embeddings[predicate] = tf.get_variable(predicate.name, shape=[dimension], dtype=tf.float32,
+                                                         initializer=tf.contrib.layers.xavier_initializer())
+        for constant in constants:
+            self.embeddings[constant] = tf.get_variable(constant, shape=[dimension], dtype=tf.float32,
+                                                        initializer=tf.contrib.layers.xavier_initializer())
+
+    def __getitem__(self, key):
+        return self.embeddings[key]
+
+    @property
+    def symbols(self):
+        return self.embeddings.keys()
+
+    @property
+    def variables(self):
+        return self.embeddings.values()
+
+    @staticmethod
+    def from_clauses(background, para_clauses, target_predicates=set()):
+        predicates = set()
+        constants = set()
+        para_predicates = set()
+        for atom in background:
+            predicates.add(atom.predicate)
+            constants.update(atom.constants)
+        for para_clause in para_clauses:
+            const = para_clause.constants
+            if not const.issubset(constants):
+                raise ValueError("parameterized clause shouldn't include the constants that didn't appear"
+                                 "in main clauses")
+            para_predicates.update(para_clause.predicates)
+        predicates.update(target_predicates)
+        return Embeddings(predicates, para_predicates, constants)
 
 class NTPAgent():
-    def __init__(self, ntp, embeddings, background, actions, embedding_length=20):
+    def __init__(self, embeddings:Embeddings, background:List[Atom],
+                 actions:List[Atom], rules:List[List[Clause]], embedding_length=20):
         self.embeddings = embeddings
-        self.ntp = ntp
         self.embedding_length = embedding_length
-        self.background_tensor = self.atoms2tensor(background)
-        self.actions = self.atoms2tensor(actions)
+        self.background_kb = self.atoms2tensor(background)
+        self.actions = actions
+        self.action_embeddings = self.atoms2tensor(actions)
+        self.rules_kb = [self.clauses2tensor(rules_partition) for rules_partition in rules]
+        self.ntp = NTP(kernel=RBFKernel, max_depth=4, k_max=5)
 
+
+    def atoms2tensor(self, atoms: List[Atom])->List[Union[str,tf.Tensor]]:
+        """
+        :param atoms: list of atoms that has same shape
+        :return: list of tensors or strs, represent the result in each different position
+        """
+        predicates_e = self.symbols2tensor([atom.predicate for atom in atoms])
+        terms_e = []
+        for i in range(len(atoms[0].terms)):
+            if isinstance(atoms[0].terms[i],int):
+                terms_e.append(str(atoms[0].terms[i]))
+                terms_e.append(self.symbols2tensor([atom.terms[i] for atom in atoms]))
+        return [predicates_e]+terms_e
+
+    def clauses2tensor(self, clauses: List[Clause])->List[List[Union[str,tf.Tensor]]]:
+        """
+        :param clauses: clauses with the same shape (same position of predicates and terms)
+        :return:
+        """
+        atoms_positions = [self.atoms2tensor([clause.atoms[i] for clause in clauses])
+                           for i in range(len(clauses[0].atoms))]
+        return atoms_positions
 
     def symbols2tensor(self, symbols: List[str])->tf.Tensor:
         """
         :param symbols: list of symbols with length N.
         :return: tensor of shape [N, E]
         """
-        embeddings = []
-        for symbol in symbols:
-            if isinstance(symbol, str):
-                embeddings.append(self.embeddings[symbol])
-            elif isinstance(symbol, int):
-                embeddings.append(str(symbol))
-            else:
-                raise ValueError()
-        return tf.stack(embeddings)
+        return tf.stack([self.embeddings[symbol] for symbol in symbols])
 
-    def atoms2tensor(self, state:List[Atom])->List[tf.Tensor]:
-        """
-        :param state: list of state atoms
-        :return:
-        """
-        return [self.symbols2tensor(atom.symbols) for atom in state]
+    def action_eval2prob(self, action_eval:tf.Tensor)->tf.Tensor:
+        sum_action_eval = tf.reduce_sum(action_eval)
+        if sum_action_eval > 1.0:
+            action_prob = action_eval / sum_action_eval
+        else:
+            action_prob = action_eval + (1.0 - sum_action_eval) / len(self.actions)
+        return action_prob
 
-    def decide(self, state: List[List[Atom]])->tf.Tensor:
+    def decide(self, state:List[Atom])->tf.Tensor:
         """
         :param state: batched lists of atoms,
             containing information about both the state and background knowledge
         :return: action distribution
         """
-
-
-
+        state_kb = self.atoms2tensor(state)
+        scores = self.ntp.predict(predicate_embeddings=self.action_embeddings[0],
+                                  subject_embeddings=self.action_embeddings[1],
+                                  object_embeddings=self.action_embeddings[2],
+                                  neural_facts_kb=self.background_kb+state_kb,
+                                  neural_rules_kb=self.rules_kb)
+        return self.action_eval2prob(scores)
 
 def substitute(atom, substitutions):
     """
@@ -521,46 +585,7 @@ class VariableManager():
         self.__max_id += len(clause.variables)
         return activated_clause
 
-class Embeddings():
-    def __init__(self, predicates, para_predicates, constants, dimension=20):
-        self.predicates = set(predicates)
-        self.constants = set(constants)
-        self.para_predicates = set(para_predicates)
-        self.embeddings = {}
-        for predicate in predicates.union(para_predicates):
-            self.embeddings[predicate] = tf.get_variable(predicate.name, shape=[dimension], dtype=tf.float32,
-                                                         initializer=tf.contrib.layers.xavier_initializer())
-        for constant in constants:
-            self.embeddings[constant] = tf.get_variable(constant, shape=[dimension], dtype=tf.float32,
-                                                        initializer=tf.contrib.layers.xavier_initializer())
 
-    def __getitem__(self, key):
-        return self.embeddings[key]
-
-    @property
-    def symbols(self):
-        return self.embeddings.keys()
-
-    @property
-    def variables(self):
-        return self.embeddings.values()
-
-    @staticmethod
-    def from_clauses(clauses, para_clauses, target_predicates=set()):
-        predicates = set()
-        constants = set()
-        para_predicates = set()
-        for clause in clauses:
-            predicates.update(clause.predicates)
-            constants.update(clause.constants)
-        for para_clause in para_clauses:
-            const = para_clause.constants
-            if not const.issubset(constants):
-                raise ValueError("parameterized clause shouldn't include the constants that didn't appear"
-                                 "in main clauses")
-            para_predicates.update(para_clause.predicates)
-        predicates.update(target_predicates)
-        return Embeddings(predicates, para_predicates, constants)
 
 if __name__ == "__main__":
     tf.enable_eager_execution()

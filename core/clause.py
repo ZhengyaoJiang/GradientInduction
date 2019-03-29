@@ -67,6 +67,10 @@ class Atom(object):
         assert len(terms) == predicate.arity
 
     @property
+    def symbols(self):
+        return self.predicate+self.terms
+
+    @property
     def arity(self):
         return len(self.terms)
 

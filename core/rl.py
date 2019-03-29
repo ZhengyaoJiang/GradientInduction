@@ -27,7 +27,7 @@ class ReinforceLearner(object):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
         if isinstance(agent, HybridAgent):
             self.type = "Hybrid"
-        elif isinstance(agent, NTPRLWrapper):
+        elif isinstance(agent, NTPAgent):
             self.type = "NTP"
         elif isinstance(agent, NeuralAgent):
             self.type = "NN"
@@ -140,8 +140,8 @@ class ReinforceLearner(object):
             self.critic.batch_learn(state_history, reward_history, steps)
             values = self.critic.get_values(state_history,steps).numpy().flatten()
             #advantages = normalize(generalized_adv(reward_history, values, self.discounting))
-            #advantages = generalized_adv(reward_history, values, self.discounting)
-            advantages = np.array(returns)# - values
+            advantages = generalized_adv(reward_history, values, self.discounting)
+            #advantages = np.array(returns)# - values
         else:
             advantages = returns
         advantages[-1] = 0.0

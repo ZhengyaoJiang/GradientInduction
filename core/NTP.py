@@ -19,17 +19,45 @@ score is a vector (Tensor) representing the sucessness scores of the proof.
 FAIL = ProofState(None, 0)
 
 
-class NTPRLWrapper():
-    def __init__(self, ntp):
-        pass
+class NTPAgent():
+    def __init__(self, ntp, embeddings, background, actions, embedding_length=20):
+        self.embeddings = embeddings
+        self.ntp = ntp
+        self.embedding_length = embedding_length
+        self.background_tensor = self.atoms2tensor(background)
+        self.actions = self.atoms2tensor(actions)
 
-    def decide(self, state: Union[List[Atom], List[List[Atom]]])->tf.Tensor:
+
+    def symbols2tensor(self, symbols: List[str])->tf.Tensor:
         """
-        :param state: list of atoms or batched lists of atoms,
+        :param symbols: list of symbols with length N.
+        :return: tensor of shape [N, E]
+        """
+        embeddings = []
+        for symbol in symbols:
+            if isinstance(symbol, str):
+                embeddings.append(self.embeddings[symbol])
+            elif isinstance(symbol, int):
+                embeddings.append(str(symbol))
+            else:
+                raise ValueError()
+        return tf.stack(embeddings)
+
+    def atoms2tensor(self, state:List[Atom])->List[tf.Tensor]:
+        """
+        :param state: list of state atoms
+        :return:
+        """
+        return [self.symbols2tensor(atom.symbols) for atom in state]
+
+    def decide(self, state: List[List[Atom]])->tf.Tensor:
+        """
+        :param state: batched lists of atoms,
             containing information about both the state and background knowledge
         :return: action distribution
         """
-        pass
+
+
 
 
 def substitute(atom, substitutions):
@@ -494,7 +522,7 @@ class VariableManager():
         return activated_clause
 
 class Embeddings():
-    def __init__(self, predicates, para_predicates, constants, dimension=5):
+    def __init__(self, predicates, para_predicates, constants, dimension=20):
         self.predicates = set(predicates)
         self.constants = set(constants)
         self.para_predicates = set(para_predicates)

@@ -42,7 +42,7 @@ class Embeddings():
 
     @property
     def variables(self):
-        return self.embeddings.values()
+        return list(self.embeddings.values())
 
     @staticmethod
     def from_clauses(background, para_clauses, constants, additional_predicates):
@@ -86,6 +86,8 @@ class NTPAgent():
         self.ntp = NTP(kernel=RBFKernel(), max_depth=4, k_max=5)
         self.state_encoding = "atoms"
 
+    def all_variables(self):
+        return self.embeddings.variables
 
     def atoms2tensor(self, atoms: List[Atom])->List[Union[str,tf.Tensor]]:
         """
@@ -109,6 +111,9 @@ class NTPAgent():
         atoms_positions = [self.atoms2tensor([clause.atoms[i] for clause in clauses])
                            for i in range(len(clauses[0].atoms))]
         return atoms_positions
+
+    def log(self):
+        pass
 
     def symbols2tensor(self, symbols: List[str])->tf.Tensor:
         """

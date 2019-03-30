@@ -21,7 +21,7 @@ class ReinforceLearner(object):
     def __init__(self, agent, enviornment, learning_rate, critic=None,
                  steps=300, name=None, discounting=1.0, batched=True, optimizer="RMSProp",
                  end_by_episode=True,
-                 minibatch_size=10, gradient_noise_rate=0.0,
+                 minibatch_size=1, gradient_noise_rate=0.0,
                  gradient_noise_exp=0.55,
                  log_steps=100):
         # super(ReinforceDILP, self).__init__(rules_manager, enviornment.background)
@@ -53,11 +53,12 @@ class ReinforceLearner(object):
     def train(self, state_history, advantage, action_index):
         #advantage = np.array(advantage)
         with tf.GradientTape() as tape:
-            action_dist,_ = self.decide(state_history)
-            indexed_action_prob = tf.batch_gather(action_dist,
-                                                  tf.convert_to_tensor(action_index)[:, None])[:, 0]
-            loss = self.loss(indexed_action_prob, advantage)
-        gradients = tape.gradient(loss, self.agent.model.trainable_variables)
+            if self.batched:
+                action_dist,_ = self.decide(state_history)
+                indexed_action_prob = tf.batch_gather(action_dist,
+                                                      tf.convert_to_tensor(action_index)[:, None])[:, 0]
+                loss = self.loss(indexed_action_prob, advantage)
+        gradients = tape.gradient(loss, self.agent.all_variables())
         step = tf.train.get_or_create_global_step()
         if self.gradient_noise_rate>0:
             noisy_gradient = []
@@ -71,7 +72,7 @@ class ReinforceLearner(object):
             gradients = noisy_gradient
         optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
         try:
-            optimizer.apply_gradients(zip(gradients, self.agent.model.trainable_variables), global_step=step)
+            optimizer.apply_gradients(zip(gradients, self.agent.all_variables()), global_step=step)
         except Exception as e:
             # For random agent
             if self.type != "Random":
@@ -89,7 +90,7 @@ class ReinforceLearner(object):
     def decide(self, states):
         if self.type == "NTP":
             inputs = None # inputs are needed only for neural network models, so this is none
-            action_prob = self.agent.decide(list(self.env.state2atoms(states[0])))
+            action_prob = [self.agent.decide(list(self.env.state2atoms(states[0])))]
         elif self.type == "NN":
             inputs = np.array([self.env.state2vector(state) for state in states], dtype=np.float32)
             action_prob = self.agent.decide(inputs, False)
@@ -114,7 +115,7 @@ class ReinforceLearner(object):
             action_prob = action_prob[0].numpy()
             action_index = np.random.choice(range(self.env.action_n), p=action_prob)
             if self.state_encoding == "atoms":
-                action = self.agent.all_actions[action_index]
+                action = self.env.all_actions[action_index]
             elif self.state_encoding =="vector":
                 if action_index<len(self.env.all_actions):
                     action = self.env.all_actions[action_index]

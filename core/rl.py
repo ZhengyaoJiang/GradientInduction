@@ -89,7 +89,7 @@ class ReinforceLearner(object):
     def decide(self, states):
         if self.type == "NTP":
             inputs = None # inputs are needed only for neural network models, so this is none
-            action_prob = self.agent.decide([self.env.state2atoms(states)])
+            action_prob = self.agent.decide(list(self.env.state2atoms(states[0])))
         elif self.type == "NN":
             inputs = np.array([self.env.state2vector(state) for state in states], dtype=np.float32)
             action_prob = self.agent.decide(inputs, False)

@@ -8,9 +8,9 @@ import pandas as pd
 from core.clause import is_variable, Clause, Atom, Predicate
 from sntp.models import NTP
 from sntp.kernels import RBFKernel
-from typing import List, Union, Optional, Tuple
+from typing import List, Union, Optional, Tuple, Set
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 EMBEDDING_LENGTH = 5 # embedding vector length
 
 ProofState = namedtuple("ProofState", "substitution score")
@@ -45,9 +45,9 @@ class Embeddings():
         return self.embeddings.values()
 
     @staticmethod
-    def from_clauses(background, para_clauses, target_predicates=set()):
+    def from_clauses(background, para_clauses, constants, additional_predicates):
         predicates = set()
-        constants = set()
+        constants = set(constants)
         para_predicates = set()
         for atom in background:
             predicates.add(atom.predicate)
@@ -58,19 +58,33 @@ class Embeddings():
                 raise ValueError("parameterized clause shouldn't include the constants that didn't appear"
                                  "in main clauses")
             para_predicates.update(para_clause.predicates)
-        predicates.update(target_predicates)
+        predicates.update(additional_predicates)
         return Embeddings(predicates, para_predicates, constants)
+
+def split_atoms(atoms: List[Atom])->List[List[Atom]]:
+    """
+    Split atoms according to their shapes
+    :param atoms:
+    :return:
+    """
+    dic = defaultdict(list)
+    for atom in atoms:
+        dic[atom.predicate.arity].append(atom)
+    return list(dic.values())
+
 
 class NTPAgent():
     def __init__(self, embeddings:Embeddings, background:List[Atom],
                  actions:List[Atom], rules:List[List[Clause]], embedding_length=20):
         self.embeddings = embeddings
         self.embedding_length = embedding_length
+        self.background = background
         self.background_kb = self.atoms2tensor(background)
         self.actions = actions
         self.action_embeddings = self.atoms2tensor(actions)
         self.rules_kb = [self.clauses2tensor(rules_partition) for rules_partition in rules]
-        self.ntp = NTP(kernel=RBFKernel, max_depth=4, k_max=5)
+        self.ntp = NTP(kernel=RBFKernel(), max_depth=4, k_max=5)
+        self.state_encoding = "atoms"
 
 
     def atoms2tensor(self, atoms: List[Atom])->List[Union[str,tf.Tensor]]:
@@ -83,6 +97,7 @@ class NTPAgent():
         for i in range(len(atoms[0].terms)):
             if isinstance(atoms[0].terms[i],int):
                 terms_e.append(str(atoms[0].terms[i]))
+            else:
                 terms_e.append(self.symbols2tensor([atom.terms[i] for atom in atoms]))
         return [predicates_e]+terms_e
 
@@ -116,11 +131,11 @@ class NTPAgent():
             containing information about both the state and background knowledge
         :return: action distribution
         """
-        state_kb = self.atoms2tensor(state)
+        facts_kb = [[self.atoms2tensor(group)] for group in split_atoms(self.background+state)]
         scores = self.ntp.predict(predicate_embeddings=self.action_embeddings[0],
                                   subject_embeddings=self.action_embeddings[1],
                                   object_embeddings=self.action_embeddings[2],
-                                  neural_facts_kb=self.background_kb+state_kb,
+                                  neural_facts_kb=facts_kb,
                                   neural_rules_kb=self.rules_kb)
         return self.action_eval2prob(scores)
 

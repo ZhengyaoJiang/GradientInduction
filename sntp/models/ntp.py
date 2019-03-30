@@ -47,7 +47,7 @@ class NTP(BaseModel):
                 predicate_embeddings: tf.Tensor,
                 subject_embeddings: tf.Tensor,
                 object_embeddings: tf.Tensor,
-                neural_facts_kb: List[tf.Tensor],
+                neural_facts_kb: List[List[List[tf.Tensor]]],
                 neural_rules_kb: List[List[List[Union[tf.Tensor, str]]]],
                 mask_indices: Optional[np.ndarray] = None) -> tf.Tensor:
         """
@@ -62,7 +62,7 @@ class NTP(BaseModel):
         :return: [G] goal scores.
         """
         goals = [predicate_embeddings, subject_embeddings, object_embeddings]
-        neural_kb = neural_rules_kb + [[neural_facts_kb]]
+        neural_kb = neural_rules_kb + neural_facts_kb
         start_proof_state = ProofState(substitutions={}, scores=None)
 
         ntp_params = NTPParams(kernel=self.kernel,

@@ -12,7 +12,7 @@ def is_tensor(atom_elem):
 
 
 def is_variable(atom_elem):
-    return isinstance(atom_elem, str) and atom_elem.isupper()
+    return isinstance(atom_elem, str) and atom_elem.isdigit()
 
 
 def atom_to_str(atom):

@@ -41,7 +41,7 @@ def unify(atom: List[Union[tf.Tensor, str]],
         if is_variable(atom_elem):
             if atom_elem not in substitutions:
                 substitutions.update({atom_elem: goal_elem})
-
+            continue
         elif is_variable(goal_elem):
             if is_tensor(atom_elem):
                 atom_shp = atom_elem.get_shape()
@@ -55,13 +55,14 @@ def unify(atom: List[Union[tf.Tensor, str]],
 
             if goal_elem not in substitutions:
                 substitutions.update({goal_elem: atom_elem})
-
+            continue
         elif is_tensor(atom_elem) and is_tensor(goal_elem):
             atom_tensors_lst += [atom_elem]
             goal_tensors_lst += [goal_elem]
 
-        atom_elem = tf.concat(atom_tensors_lst, axis=-1)
-        goal_elem = tf.concat(goal_tensors_lst, axis=-1)
+        #NOTE(zhengyao): I don't understand why concat them, cancel it for now.
+        #atom_elem = tf.concat(atom_tensors_lst, axis=-1)
+        #goal_elem = tf.concat(goal_tensors_lst, axis=-1)
 
         goal_elem_shp = goal_elem.get_shape()
         embedding_size = goal_elem_shp[-1]

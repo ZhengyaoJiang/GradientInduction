@@ -7,6 +7,7 @@ import copy
 import pandas as pd
 from core.clause import is_variable, Clause, Atom, Predicate
 from sntp.models import NTP
+from sntp.kernels.product import ProductKernel
 from sntp.kernels import RBFKernel
 from typing import List, Union, Optional, Tuple, Set
 
@@ -21,28 +22,35 @@ score is a vector (Tensor) representing the sucessness scores of the proof.
 FAIL = ProofState(None, 0)
 
 class Embeddings():
-    def __init__(self, predicates, para_predicates, constants, dimension=20):
-        self.predicates = set(predicates)
-        self.constants = set(constants)
-        self.para_predicates = set(para_predicates)
+    def __init__(self, predicates, para_predicates, constants):
+        self.predicates = list(set(predicates))
+        self.constants = list(set(constants))
+        self.para_predicates = list(set(para_predicates))
         self.embeddings = {}
-        for predicate in predicates.union(para_predicates):
-            self.embeddings[predicate] = tf.get_variable(predicate.name, shape=[dimension], dtype=tf.float32,
-                                                         initializer=tf.contrib.layers.xavier_initializer())
-        for constant in constants:
-            self.embeddings[constant] = tf.get_variable(constant, shape=[dimension], dtype=tf.float32,
-                                                        initializer=tf.contrib.layers.xavier_initializer())
+        dimension = len(self.predicates+self.constants+self.para_predicates)
+        self.variables = []
+        for predicate in para_predicates:
+            v = tf.get_variable(predicate.name, shape=[dimension], dtype=tf.float32,
+                                                         initializer=tf.contrib.layers.xavier_initializer(),
+                                trainable=True)
+            tf.add_to_collection(tf.GraphKeys.GLOBAL_VARIABLES, v)
+            self.variables.append(v)
+            self.embeddings[predicate] = v
+
+        for i, symbol in enumerate(self.constants+self.predicates):
+            #self.embeddings[constant] = tf.get_variable(constant, shape=[dimension], dtype=tf.float32,
+            #                                           initializer=tf.contrib.layers.xavier_initializer())
+            self.embeddings[symbol] = tf.one_hot(i, dimension)
 
     def __getitem__(self, key):
-        return self.embeddings[key]
+        if key in self.para_predicates:
+            return tf.nn.softmax(self.embeddings[key])
+        else:
+            return self.embeddings[key]
 
     @property
     def symbols(self):
         return self.embeddings.keys()
-
-    @property
-    def variables(self):
-        return list(self.embeddings.values())
 
     @staticmethod
     def from_clauses(background, para_clauses, constants, additional_predicates):
@@ -72,19 +80,27 @@ def split_atoms(atoms: List[Atom])->List[List[Atom]]:
         dic[atom.predicate.arity].append(atom)
     return list(dic.values())
 
+class VariableManager():
+    def __init__(self):
+        self.__max_id = 0
+
+    def activate(self, clause):
+        activated_clause = clause.assign_var_id(self.__max_id)
+        self.__max_id += len(clause.variables)
+        return activated_clause
 
 class NTPAgent():
     def __init__(self, embeddings:Embeddings, background:List[Atom],
                  actions:List[Atom], rules:List[List[Clause]], embedding_length=20):
+        self.variable_manager = VariableManager()
         self.embeddings = embeddings
         self.embedding_length = embedding_length
         self.background = background
-        self.background_kb = self.atoms2tensor(background)
         self.actions = actions
         self.action_embeddings = self.atoms2tensor(actions)
-        self.rules_kb = [self.clauses2tensor(rules_partition) for rules_partition in rules]
-        self.ntp = NTP(kernel=RBFKernel(), max_depth=4, k_max=5)
+        self.ntp = NTP(kernel=ProductKernel(), max_depth=1, k_max=5)
         self.state_encoding = "atoms"
+        self.rules = rules
 
     def all_variables(self):
         return self.embeddings.variables
@@ -108,6 +124,7 @@ class NTPAgent():
         :param clauses: clauses with the same shape (same position of predicates and terms)
         :return:
         """
+        clauses = [self.variable_manager.activate(clause) for clause in clauses]
         atoms_positions = [self.atoms2tensor([clause.atoms[i] for clause in clauses])
                            for i in range(len(clauses[0].atoms))]
         return atoms_positions
@@ -127,7 +144,7 @@ class NTPAgent():
         if sum_action_eval > 1.0:
             action_prob = action_eval / sum_action_eval
         else:
-            action_prob = action_eval + (1.0 - sum_action_eval) / len(self.actions)
+            action_prob = action_eval + (1.0 - sum_action_eval) / float(len(self.actions))
         return action_prob
 
     def decide(self, state:List[Atom])->tf.Tensor:
@@ -137,6 +154,7 @@ class NTPAgent():
         :return: action distribution
         """
         facts_kb = [[self.atoms2tensor(group)] for group in split_atoms(self.background+state)]
+        self.rules_kb = [self.clauses2tensor(rules_partition) for rules_partition in self.rules]
         scores = self.ntp.predict(predicate_embeddings=self.action_embeddings[0],
                                   subject_embeddings=self.action_embeddings[1],
                                   object_embeddings=self.action_embeddings[2],
@@ -596,14 +614,7 @@ class RLProver(NeuralProver):
 
 
 
-class VariableManager():
-    def __init__(self):
-        self.__max_id = 0
 
-    def activate(self, clause):
-        activated_clause = clause.assign_var_id(self.__max_id)
-        self.__max_id += len(clause.variables)
-        return activated_clause
 
 
 

@@ -53,6 +53,7 @@ class ReinforceLearner(object):
     def train(self, state_history, advantage, action_index):
         #advantage = np.array(advantage)
         with tf.GradientTape() as tape:
+            #tape.watch(self.agent.all_variables())
             if self.batched:
                 action_dist,_ = self.decide(state_history)
                 indexed_action_prob = tf.batch_gather(action_dist,

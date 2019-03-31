@@ -12,4 +12,5 @@ __all__ = [
     'LinearKernel',
     'RBFKernel',
     'CosineKernel',
+    'ProductKernel'
 ]

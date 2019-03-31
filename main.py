@@ -118,10 +118,10 @@ def start_NTP(task, name, mode, variation=None):
         #learner = PPOLearner(agent, env, 0.05, critic=critic, steps=120000, name=name)
     elif task == "unstack":
         env = Unstack()
-        clauses = [str2clause("p1(X,Y):-p2(X),p3(Y)"),]
-                   #str2clause("p4(X):-p5(X,Y),p6(Y,Z)"),
-                   #str2clause("p7(X):-p8(X),p9(X)"),
-                   #str2clause("p10(X,Y):-p11(Y,X)")]
+        clauses = [str2clause("p1(X,Y):-p2(X),p3(Y)"),
+                   str2clause("p4(X):-p5(X,Y),p6(Y,Z)"),
+                   str2clause("p7(X):-p8(X),p9(X)"),
+                   ]
         embeddings = Embeddings.from_clauses(env.background, clauses, env.language.constants,
                                              env.language.extensional+env.language.target)
         agent = NTPAgent(embeddings, env.background, env.all_actions,

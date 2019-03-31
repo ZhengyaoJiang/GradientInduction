@@ -139,8 +139,8 @@ class ReinforceLearner(object):
         final_return = [np.sum(reward_history)]
         returns = discount(reward_history, self.discounting)
         if self.critic:
-            self.critic.batch_learn(state_history, reward_history, steps)
             values = self.critic.get_values(state_history,steps).numpy().flatten()
+            self.critic.batch_learn(state_history, reward_history, steps)
             #advantages = normalize(generalized_adv(reward_history, values, self.discounting))
             advantages = generalized_adv(reward_history, values, self.discounting)
             #advantages = np.array(returns)# - values

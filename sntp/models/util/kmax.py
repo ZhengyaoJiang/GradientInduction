@@ -75,7 +75,7 @@ def k_max(goal: List[Union[tf.Tensor, str]],
                 # Variable is going to be [K, R, G, E]
                 substitution_shp = var_tensor.get_shape()
                 embedding_size = substitution_shp[-1]
-
+                #TODO: problem with k-max
                 assert substitution_shp[0] == k_size
 
                 new_substitution_shp = new_scores_shp.concatenate([embedding_size])

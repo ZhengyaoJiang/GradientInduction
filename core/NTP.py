@@ -98,7 +98,7 @@ class NTPAgent():
         self.background = background
         self.actions = actions
         self.action_embeddings = self.atoms2tensor(actions)
-        self.ntp = NTP(kernel=ProductKernel(), max_depth=1, k_max=5)
+        self.ntp = NTP(kernel=ProductKernel(), max_depth=3, k_max=3)
         self.state_encoding = "atoms"
         self.rules = rules
 

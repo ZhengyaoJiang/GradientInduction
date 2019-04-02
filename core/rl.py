@@ -42,11 +42,11 @@ class ReinforceLearner(object):
         self.critic=critic
         self.total_steps = steps
         self.name = name
+        self.optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
         self.discounting = discounting
         self.batched = batched
         self.end_by_episode=end_by_episode
         self.batch_size = minibatch_size
-        self.optimizer = optimizer
         self.log_steps = log_steps
         self.dynamic_records = []
 
@@ -71,9 +71,8 @@ class ReinforceLearner(object):
                                       tf.random_normal(tf.shape(gradient),
                                                        stddev=std))
             gradients = noisy_gradient
-        optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
         try:
-            optimizer.apply_gradients(zip(gradients, self.agent.all_variables()), global_step=step)
+            self.optimizer.apply_gradients(zip(gradients, self.agent.all_variables()), global_step=step)
         except Exception as e:
             # For random agent
             if self.type != "Random":
@@ -195,22 +194,21 @@ class ReinforceLearner(object):
             with self.summary_writer.as_default(), tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.histogram(name, data)
 
-    def setup_train(self, sess, auto_load=True):
-        sess.run([tf.initializers.global_variables()])
+    def setup_train(self, auto_load=True):
         if self.name:
             if auto_load:
                 try:
                     path = "./model/" + self.name
-                    self.load(sess, path)
+                    self.load(path)
                 except Exception as e:
                     print(e)
-            self.summary_writer = tf.contrib.summary.create_file_writer("./model/"+self.name, flush_millis=10000)
-            self.summary_scalar("returns", self.tf_returns[0])
-            self.summary_histogram("advantages", self.tf_advantage)
-            self.summary_scalar("loss", self.tf_loss)
+            #self.summary_writer = tf.contrib.summary.create_file_writer("./model/"+self.name, flush_millis=10000)
+            #self.summary_scalar("returns", self.tf_returns[0])
+            #self.summary_histogram("advantages", self.tf_advantage)
+            #self.summary_scalar("loss", self.tf_loss)
             #self.summary_histogram("weights", tf.concat(self.agent.all_variables(), axis=0))
-            with self.summary_writer.as_default():
-                tf.contrib.summary.initialize(graph=tf.get_default_graph(), session=sess)
+            #with self.summary_writer.as_default():
+            #    tf.contrib.summary.initialize(graph=tf.get_default_graph(), session=sess)
         else:
             self.summary_writer = None
             # modelArxivICML definition code goes here
@@ -242,25 +240,35 @@ class ReinforceLearner(object):
         self.train(state_history, advantage, action_history)
         return log
 
-    def save(self, sess, path):
-        self.saver.save(sess, path + "/parameters.ckpt")
-        if self.critic and isinstance(self.critic, TableCritic):
-            self.critic.save(path + "/critic.pl")
-        if self.type=="NTP":
-            self.dynamic_records.append(self.agent.get_predicates_definition(sess))
-            with open(path+"/dynamics.json", "w") as f:
-                json.dump(self.dynamic_records, f)
+    @property
+    def checkpoints(self):
+        state_dict = {"optimizer": self.optimizer}
+        state_dict.update(self.agent.checkpoints)
+        if self.critic:
+            state_dict.update(self.critic.checkpoints)
+        return state_dict
 
-    def load(self, sess, path):
+    def save(self, path):
+        ckpt = tf.train.Checkpoint(**self.checkpoints)
+        ckpt.save(path+"/ckpt/")
+        #self.dynamic_records.append(self.agent.get_predicates_definition(sess))
+        #with open(path+"/dynamics.json", "w") as f:
+        #    json.dump(self.dynamic_records, f)
+
+    def load(self, path):
+        """
         self.saver.restore(sess, path+"/parameters.ckpt")
         if self.critic and isinstance(self.critic, TableCritic):
             self.critic.load(path + "/critic.pl")
         if self.type=="NTP":
             with open(path+"/dynamics.json", "r") as read_file:
                 self.dynamic_records=json.load(read_file)
+        """
+        ckpt = tf.train.Checkpoint(**self.checkpoints)
+        ckpt.restore(tf.train.latest_checkpoint(path+"/ckpt/"))
 
     def start_train(self):
-            #self.setup_train(sess)
+        self.setup_train()
         self.minibatch_buffer = self.get_minibatch_buffer(batch_size=self.batch_size,
                                                           end_by_episode=self.end_by_episode)
         for i in range(self.total_steps):
@@ -271,7 +279,7 @@ class ReinforceLearner(object):
                 self.agent.log()
                 if self.name:
                     path = "./model/" + self.name
-                    #self.save(path)
+                    self.save(path)
                 pprint(log)
             print("-"*20+"\n")
         return log["return"]
@@ -395,6 +403,10 @@ class NeuralAgent(object):
     def all_variables(self):
         return self.model.variables
 
+    @property
+    def checkpoints(self):
+        return {"actor_model":self.model}
+
     def log(self):
         pass
 
@@ -413,7 +425,14 @@ class NeuralCritic(object):
             layers.append(tf.keras.layers.Dense(unit_n, activation=tf.nn.leaky_relu))
         layers.append(tf.keras.layers.Dense(1))
         self.model = tf.keras.Sequential(layers)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
 
+    def all_variables(self):
+        return self.model.trainable_variables
+
+    @property
+    def checkpoints(self):
+        return {"critic_model": self.model, "critic_optimizer":self.optimizer}
 
     def log(self, sess):
         pass
@@ -423,9 +442,8 @@ class NeuralCritic(object):
         with tf.GradientTape() as tape:
             outputs = self.get_values(states, steps)
             loss = tf.reduce_sum(tf.square(outputs[:, 0] - returns))
-        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
         grads = tape.gradient(loss, self.model.variables)
-        optimizer.apply_gradients(zip(grads, self.model.variables),
+        self.optimizer.apply_gradients(zip(grads, self.model.variables),
                                   global_step=tf.train.get_or_create_global_step())
 
     def get_values(self, states, steps=None):

@@ -129,7 +129,7 @@ def start_NTP(task, name, mode, variation=None):
         if variation:
             critic = None
         else:
-            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.001,
+            critic = NeuralCritic([20], env.state_dim, 1.0, learning_rate=0.005,
                                   state2vector=env.state2vector, involve_steps=True)
         learner = ReinforceLearner(agent, env, 0.05, critic=critic,
                                    batched=True, steps=30000, name=name)
